@@ -1,0 +1,12 @@
+# Ignore SQLite database files (no longer used)
+*.db
+*.db-shm
+*.db-wal
+
+# Ignore large data files
+readings.json
+
+# Keep JSON configuration files
+!instruments.json
+!monitoring.json
+!README.md

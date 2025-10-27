@@ -1,0 +1,174 @@
+import { useState, useEffect } from 'react';
+import type { ReactElement } from 'react';
+import { fetchLiveData, startMonitoring, stopMonitoring, collectNow } from '../../services/dataService';
+import type { Reading } from '../../services/dataService';
+import { LiveChart } from './LiveChart';
+import { ReadingsTable } from './ReadingsTable';
+import { MonitoringControls } from './MonitoringControls';
+
+export function LiveDashboard(): ReactElement {
+  const [readings, setReadings] = useState<Reading[]>([]);
+  const [selectedSetup, setSelectedSetup] = useState<number | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState(5000); // 5 seconds
+  const [loading, setLoading] = useState(false);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const data = await fetchLiveData(100);
+      setReadings(data);
+    } catch (error) {
+      console.error('Failed to load live data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    
+    if (autoRefresh) {
+      const interval = setInterval(loadData, refreshInterval);
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh, refreshInterval]);
+
+  const handleStartMonitoring = async (setupId: number) => {
+    try {
+      await startMonitoring(setupId);
+      await loadData();
+    } catch (error) {
+      console.error('Failed to start monitoring:', error);
+    }
+  };
+
+  const handleStopMonitoring = async (setupId: number) => {
+    try {
+      await stopMonitoring(setupId);
+    } catch (error) {
+      console.error('Failed to stop monitoring:', error);
+    }
+  };
+
+  const handleCollectNow = async (setupId: number) => {
+    try {
+      const reading = await collectNow(setupId);
+      setReadings(prev => [...prev, reading]);
+    } catch (error) {
+      console.error('Failed to collect data:', error);
+    }
+  };
+
+  // Get unique setups from readings
+  const setups = Array.from(
+    new Map(
+      readings.map(r => [r.setup_id, { id: r.setup_id, name: r.setup_name }])
+    ).values()
+  );
+
+  // Filter readings by selected setup
+  const filteredReadings = selectedSetup
+    ? readings.filter(r => r.setup_id === selectedSetup)
+    : readings;
+
+  return (
+    <div className="space-y-6">
+      {/* Header Controls */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-100">Live Dashboard</h1>
+        
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="rounded border-slate-700 bg-slate-800 text-primary-light focus:ring-primary-light"
+            />
+            Auto-refresh
+          </label>
+          
+          <select
+            value={refreshInterval}
+            onChange={(e) => setRefreshInterval(Number(e.target.value))}
+            disabled={!autoRefresh}
+            className="rounded border border-slate-700 bg-slate-800 px-3 py-1 text-sm text-slate-100 disabled:opacity-50"
+          >
+            <option value={1000}>1s</option>
+            <option value={2000}>2s</option>
+            <option value={5000}>5s</option>
+            <option value={10000}>10s</option>
+            <option value={30000}>30s</option>
+          </select>
+
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="rounded bg-primary-light px-4 py-2 text-sm font-medium text-slate-900 hover:bg-primary-dark hover:text-white disabled:opacity-50"
+          >
+            {loading ? 'Loading...' : 'Refresh Now'}
+          </button>
+        </div>
+      </div>
+
+      {/* Setup Filter */}
+      <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <label className="mb-2 block text-sm font-medium text-slate-300">
+          Filter by Setup
+        </label>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedSetup(null)}
+            className={`rounded px-3 py-1 text-sm ${
+              selectedSetup === null
+                ? 'bg-primary-light text-slate-900'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            All Setups
+          </button>
+          {setups.map(setup => (
+            <button
+              key={setup.id}
+              onClick={() => setSelectedSetup(setup.id)}
+              className={`rounded px-3 py-1 text-sm ${
+                selectedSetup === setup.id
+                  ? 'bg-primary-light text-slate-900'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {setup.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Monitoring Controls */}
+      <MonitoringControls
+        setups={setups}
+        onStart={handleStartMonitoring}
+        onStop={handleStopMonitoring}
+        onCollect={handleCollectNow}
+      />
+
+      {/* Live Charts */}
+      {filteredReadings.length > 0 && (
+        <LiveChart readings={filteredReadings} />
+      )}
+
+      {/* Readings Table */}
+      <ReadingsTable readings={filteredReadings.slice(-20)} />
+
+      {/* Empty State */}
+      {filteredReadings.length === 0 && (
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-12 text-center">
+          <p className="text-slate-400">No data available yet.</p>
+          <p className="mt-2 text-sm text-slate-500">
+            Start monitoring a setup to begin collecting data.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
