@@ -5,5 +5,12 @@
     "description": "{\"description\":\"\",\"signals\":[{\"id\":\"c63194e0-f8d7-471d-a17a-83282b569671\",\"name\":\"Test\",\"measureCommand\":\"42\"}],\"modes\":[{\"id\":\"bf918484-bed5-4187-931b-dad6d45c43f4\",\"name\":\"Test Mode\",\"enableCommands\":\"\",\"disableCommands\":\"\",\"parameters\":[]}],\"signalModeConfigs\":[{\"modeId\":\"bf918484-bed5-4187-931b-dad6d45c43f4\",\"signalId\":\"c63194e0-f8d7-471d-a17a-83282b569671\",\"unit\":\"W\",\"scalingFactor\":1}]}",
     "is_active": true,
     "id": 1
+  },
+  {
+    "name": "DMM",
+    "address": "host.docker.internal/multimeter_scpi",
+    "description": "{\"description\":\"\",\"signals\":[{\"id\":\"b9461a08-ee99-4707-9450-f40eb8fd724f\",\"name\":\"Measure\",\"measureCommand\":\"MEAS1?\"}],\"modes\":[{\"id\":\"20aa2135-19ba-43b1-add0-af6696489d22\",\"name\":\"DC\",\"enableCommands\":\"\",\"disableCommands\":\"\",\"parameters\":[]}],\"signalModeConfigs\":[{\"modeId\":\"20aa2135-19ba-43b1-add0-af6696489d22\",\"signalId\":\"b9461a08-ee99-4707-9450-f40eb8fd724f\",\"unit\":\"V\",\"scalingFactor\":1}]}",
+    "is_active": true,
+    "id": 2
   }
 ]

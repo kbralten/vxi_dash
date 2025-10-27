@@ -9,9 +9,10 @@ export function InstrumentList(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<{ name: string; address: string; description: string }>({
+  const [editForm, setEditForm] = useState<{ name: string; ip: string; identifier: string; description: string }>({
     name: '',
-    address: '',
+    ip: '',
+    identifier: '',
     description: '',
   });
 
@@ -44,16 +45,20 @@ export function InstrumentList(): ReactElement {
 
   const handleEdit = (instrument: Instrument) => {
     setEditingId(instrument.id);
+    const [hostPart = '', dev = ''] = (instrument.address || '').split('/');
+    const ip = hostPart.split(':')[0] || '';
     setEditForm({
       name: instrument.name,
-      address: instrument.address,
+      ip,
+      identifier: dev,
       description: instrument.description || '',
     });
   };
 
   const handleUpdate = async (id: number) => {
     try {
-      await updateInstrument(id, editForm);
+      const address = `${editForm.ip}/${editForm.identifier}`;
+      await updateInstrument(id, { name: editForm.name, address, description: editForm.description });
       setEditingId(null);
       loadInstruments();
     } catch (err) {
@@ -115,15 +120,27 @@ export function InstrumentList(): ReactElement {
                   className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                 />
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Address</label>
-                <input
-                  type="text"
-                  value={editForm.address}
-                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                  className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">IP</label>
+                  <input
+                    type="text"
+                    value={editForm.ip}
+                    onChange={(e) => setEditForm({ ...editForm, ip: e.target.value })}
+                    className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Identifier</label>
+                  <input
+                    type="text"
+                    value={editForm.identifier}
+                    onChange={(e) => setEditForm({ ...editForm, identifier: e.target.value })}
+                    className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
               </div>
+              
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Description</label>
                 <textarea

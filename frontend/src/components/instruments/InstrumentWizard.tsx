@@ -107,15 +107,11 @@ export function InstrumentWizard({ onComplete, onCancel }: Props): ReactElement 
 
   const canProceedToStep2 = (() => {
     if (config.name.trim() === '' || config.address.trim() === '') return false;
-    // Validate format: IP:Port/Identifier
-    const parts = config.address.split(':');
+    // Validate format: IP/Identifier
+    const parts = config.address.split('/');
     if (parts.length !== 2) return false;
-    const [ip, portAndId] = parts;
-    if (!ip) return false;
-    const idParts = portAndId.split('/');
-    if (idParts.length !== 2) return false;
-    const [port, identifier] = idParts;
-    return port !== '' && identifier !== '';
+    const [ip, identifier] = parts;
+    return ip.trim() !== '' && identifier.trim() !== '';
   })();
   const canProceedToStep3 = config.signals.length > 0 && config.signals.every((s) => s.name && s.measureCommand);
   const canProceedToStep4 = config.modes.length > 0 && config.modes.every((m) => m.name);
