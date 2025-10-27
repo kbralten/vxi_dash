@@ -9,6 +9,8 @@ services:
       - ./data:/app/data
     ports:
       - "8000:8000"
+    environment:
+      - VXI11_ALLOW_TCP_SCPI=false
 
   frontend:
     build:

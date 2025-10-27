@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "name": "loopback",
+    "address": "host.docker.internal/loopback0",
+    "description": "{\"description\":\"\",\"signals\":[{\"id\":\"c63194e0-f8d7-471d-a17a-83282b569671\",\"name\":\"Test\",\"measureCommand\":\"42\"}],\"modes\":[{\"id\":\"bf918484-bed5-4187-931b-dad6d45c43f4\",\"name\":\"Test Mode\",\"enableCommands\":\"\",\"disableCommands\":\"\",\"parameters\":[]}],\"signalModeConfigs\":[{\"modeId\":\"bf918484-bed5-4187-931b-dad6d45c43f4\",\"signalId\":\"c63194e0-f8d7-471d-a17a-83282b569671\",\"unit\":\"W\",\"scalingFactor\":1}]}",
+    "is_active": true,
+    "id": 1
+  }
+]
