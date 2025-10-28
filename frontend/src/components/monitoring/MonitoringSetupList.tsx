@@ -17,9 +17,9 @@ export function MonitoringSetupList(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [statusById, setStatusById] = useState<Record<number, { running: boolean; last_success?: string | null; last_error?: string | null }>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<{ name: string; frequency_hz: number }>({
+  const [editForm, setEditForm] = useState<{ name: string; frequency_seconds: number }>({
     name: '',
-    frequency_hz: 1,
+    frequency_seconds: 1,
   });
 
   const loadSetups = async () => {
@@ -84,13 +84,16 @@ export function MonitoringSetupList(): ReactElement {
     setEditingId(setup.id);
     setEditForm({
       name: setup.name,
-      frequency_hz: setup.frequency_hz,
+      // Convert stored frequency (Hz) to interval in seconds for editing
+      frequency_seconds: setup.frequency_hz > 0 ? 1 / setup.frequency_hz : 0,
     });
   };
 
   const handleUpdate = async (id: number) => {
     try {
-      await updateMonitoringSetup(id, editForm);
+      // Convert interval seconds back to frequency_hz for the API
+      const freqHz = editForm.frequency_seconds > 0 ? 1 / editForm.frequency_seconds : 0;
+      await updateMonitoringSetup(id, { name: editForm.name, frequency_hz: freqHz });
       setEditingId(null);
       loadSetups();
     } catch (err) {
@@ -159,13 +162,13 @@ export function MonitoringSetupList(): ReactElement {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Frequency (Hz)</label>
+                <label className="block text-xs text-slate-400 mb-1">Collection interval (seconds)</label>
                 <input
                   type="number"
                   min="0.1"
                   step="0.1"
-                  value={editForm.frequency_hz}
-                  onChange={(e) => setEditForm({ ...editForm, frequency_hz: Number(e.target.value) })}
+                  value={editForm.frequency_seconds}
+                  onChange={(e) => setEditForm({ ...editForm, frequency_seconds: Number(e.target.value) })}
                   className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                 />
               </div>
@@ -189,7 +192,9 @@ export function MonitoringSetupList(): ReactElement {
               <header className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <h3 className="font-semibold text-primary-light">{setup.name}</h3>
-                  <span className="text-xs uppercase text-slate-400">{setup.frequency_hz} Hz</span>
+                  <span className="text-xs uppercase text-slate-400">
+                    {setup.frequency_hz > 0 ? `${(1 / setup.frequency_hz).toFixed(2)} s` : '—'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

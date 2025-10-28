@@ -6,10 +6,14 @@ import type { Instrument } from '../../types/instrument';
 import type { MonitoringCreate } from '../../types/monitoring';
 import type { InstrumentConfiguration, Mode } from '../../types/instrumentConfig';
 
-const createDefaultForm = (): MonitoringCreate => ({
+type FormState = {
+  name: string;
+  frequency_seconds: number;
+};
+
+const createDefaultForm = (): FormState => ({
   name: '',
-  frequency_hz: 1,
-  instruments: []
+  frequency_seconds: 1,
 });
 
 type TargetRow = {
@@ -20,7 +24,7 @@ type TargetRow = {
 };
 
 export function MonitoringSetupForm(): ReactElement {
-  const [form, setForm] = useState<MonitoringCreate>(() => createDefaultForm());
+  const [form, setForm] = useState<FormState>(() => createDefaultForm());
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [status, setStatus] = useState<string>('');
   const [targets, setTargets] = useState<TargetRow[]>([]);
@@ -52,9 +56,11 @@ export function MonitoringSetupForm(): ReactElement {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
+      const seconds = form.frequency_seconds;
+      const freqHz = seconds > 0 ? 1 / seconds : 0;
       const payload: MonitoringCreate = {
         name: form.name,
-        frequency_hz: form.frequency_hz,
+        frequency_hz: freqHz,
         instruments: targets.map((t) => {
           const mode: Mode | undefined = t.config?.modes?.find((m) => m.id === t.selectedModeId);
           return {
@@ -97,18 +103,19 @@ export function MonitoringSetupForm(): ReactElement {
       </div>
 
       <div>
-        <label className="block text-sm text-slate-300" htmlFor="monitoring-frequency">
-          Frequency (Hz)
+        <label className="block text-sm text-slate-300" htmlFor="monitoring-interval">
+          Collection interval (seconds)
         </label>
         <input
-          id="monitoring-frequency"
+          id="monitoring-interval"
           type="number"
           min="0.1"
           step="0.1"
-          value={form.frequency_hz}
-          onChange={(event) => setForm({ ...form, frequency_hz: Number(event.target.value) })}
+          value={form.frequency_seconds}
+          onChange={(event) => setForm({ ...form, frequency_seconds: Number(event.target.value) })}
           className="mt-1 w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm"
         />
+        <p className="mt-1 text-xs text-slate-500">Enter the desired collection interval in seconds (e.g., 1 = once per second).</p>
       </div>
 
       <div className="space-y-4">

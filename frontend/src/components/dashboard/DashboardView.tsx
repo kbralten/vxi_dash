@@ -76,7 +76,7 @@ export function DashboardView(): ReactElement {
                     <div>
                       <h3 className="text-base font-medium text-primary-light">{setup.name}</h3>
                       <p className="text-sm text-slate-300">
-                        {setup.instrument?.name ?? 'Instrument N/A'} • {setup.frequency_hz} Hz
+                        {setup.instrument?.name ?? 'Instrument N/A'} • {setup.frequency_hz > 0 ? `${(1 / setup.frequency_hz).toFixed(2)} s` : '—'}
                       </p>
                     </div>
                     <div className="rounded bg-slate-800 px-2 py-1 text-xs uppercase tracking-wide text-slate-300">
