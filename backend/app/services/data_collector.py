@@ -464,6 +464,11 @@ class DataCollector:
         setup_readings = [r for r in readings if r.get("setup_id") == setup_id]
         return setup_readings[-limit:]
 
+    def get_all_readings_for_setup(self, setup_id: int) -> List[Dict[str, Any]]:
+        """Get all readings for a specific setup (no limit)."""
+        readings = self._load_readings()
+        return [r for r in readings if r.get("setup_id") == setup_id]
+
     def get_readings_by_time_range(
         self, start_time: datetime, end_time: datetime
     ) -> List[Dict[str, Any]]:

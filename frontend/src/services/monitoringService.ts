@@ -47,3 +47,8 @@ export async function resetMonitoringReadings(id: number): Promise<{ status: str
   const response = await apiClient.post<{ status: string; removed: number; setup_id: string }>(`/dashboard/monitoring/${id}/reset`, {});
   return response.data;
 }
+
+export async function exportMonitoringCsv(id: number): Promise<Blob> {
+  const response = await apiClient.get(`/dashboard/monitoring/${id}/export.csv`, { responseType: 'blob' });
+  return response.data as Blob;
+}

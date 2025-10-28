@@ -138,6 +138,24 @@ export function MonitoringSetupList(): ReactElement {
     }
   };
 
+  const handleDownloadCsv = async (setup: MonitoringSetup) => {
+    try {
+      const { exportMonitoringCsv } = await import('../../services/monitoringService');
+      const blob = await exportMonitoringCsv(setup.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeName = (setup.name || 'setup').replace(/\s+/g, '_');
+      a.href = url;
+      a.download = `monitoring_${setup.id}_${safeName}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download CSV');
+    }
+  };
+
   if (error) {
     return <div className="rounded border border-red-500 bg-red-900/40 p-4 text-red-200">{error}</div>;
   }
@@ -261,6 +279,12 @@ export function MonitoringSetupList(): ReactElement {
                     className="rounded bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-300 hover:bg-yellow-500/30"
                   >
                     Stop
+                  </button>
+                  <button
+                    onClick={() => handleDownloadCsv(setup)}
+                    className="rounded bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300 hover:bg-blue-500/30"
+                  >
+                    Download CSV
                   </button>
                   <button
                     onClick={() => handleReset(setup.id, setup.name)}
