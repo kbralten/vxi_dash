@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import dashboard, health, instruments, monitoring
+from app.api.routes import dashboard, health, instruments, monitoring, state_machine
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -19,3 +19,4 @@ app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(instruments.router, prefix=settings.api_prefix)
 app.include_router(monitoring.router, prefix=settings.api_prefix)
 app.include_router(dashboard.router, prefix=settings.api_prefix)
+app.include_router(state_machine.router, prefix=settings.api_prefix)
