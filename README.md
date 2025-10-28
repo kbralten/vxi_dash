@@ -125,6 +125,11 @@ In the "Monitoring" section, create a new setup by giving it a name, setting a m
 
 Go to the "Dashboard" section and select your monitoring setup. You will see live charts and a control panel with **Start**, **Stop**, **Reset**, and **Download CSV** options.
 
+Poxying non-VXI instruments
+--------------------------
+
+For instruments that aren't natively VXI-11, the [vxi_proxy](https://github.com/kbralten/vxi_proxy) project can be used to bridge communication. It supports SCPI, MODBUS, USBTMC, and custom instruments over network and serial connections. This allows seamless integration of a wider range of instruments into the VXI-11 Instrument Dashboard & Data Logger.
+
 Project Structure
 -----------------
 
