@@ -60,6 +60,18 @@ At the intersection of a mode and a signal, you can configure how that signal be
 
 -   **Scaling Factor:** An input for a multiplier to apply to the raw value.
 
+Note on units and scaling
+-------------------------
+
+Always choose a base unit of measure for each signal (for example: Volts `V`, Amps `A`, Hertz `Hz`). If your instrument reports a value in a secondary unit, use the Scaling Factor to convert it to the base unit you selected.
+
+Example: Instrument reports millivolts (mV) but you want Volts (V)
+
+- Set Unit to `V` (Volts)
+- Set Scaling Factor to `0.001` (because 1 mV = 0.001 V)
+
+With this setup, a raw reading of `250 mV` will be stored/displayed as `0.25 V`.
+
 ### Configuration Example: VXI-11 Power Supply
 
 -   **Connection:** VXI-11, IP Address: `192.168.1.100`.

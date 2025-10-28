@@ -8,10 +8,16 @@ interface Props {
   onUpdateConfig: (modeId: string, signalId: string, updates: Partial<SignalModeConfig>) => void;
 }
 
+// Allow only base units in configuration; use Scaling Factor to convert from prefixed units
 const commonUnits = [
-  'V', 'mV', 'A', 'mA', 'μA', 'Ω', 'kΩ', 'MΩ',
-  'Hz', 'kHz', 'MHz', 'W', 'mW', 'dB', 'dBm',
-  '°C', '°F', 's', 'ms', 'μs', 'ns'
+  'V', // Volts
+  'A', // Amps
+  'Ω', // Ohms
+  'Hz', // Hertz
+  'W', // Watts
+  'dB', // Decibels (relative)
+  '°C', // Celsius (prefer base without offsets)
+  's', // seconds
 ];
 
 export function SignalModeMatrixStep({
@@ -96,18 +102,7 @@ export function SignalModeMatrixStep({
                                 {unit}
                               </option>
                             ))}
-                            <option value="custom">Custom...</option>
                           </select>
-                          {config?.unit === 'custom' && (
-                            <input
-                              type="text"
-                              placeholder="Enter custom unit"
-                              onChange={(e) =>
-                                onUpdateConfig(mode.id, signal.id, { unit: e.target.value })
-                              }
-                              className="mt-1 w-full rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-white placeholder-slate-500 focus:border-primary-light focus:outline-none focus:ring-1 focus:ring-primary-light"
-                            />
-                          )}
                         </div>
 
                         {config?.unit && config.unit !== '' && (
@@ -139,11 +134,12 @@ export function SignalModeMatrixStep({
       </div>
 
       <div className="rounded bg-slate-800/30 p-4 text-xs text-slate-400">
-        <p className="font-medium">Example:</p>
-        <p className="mt-1">
-          For a power supply&apos;s &quot;Set Output&quot; mode with &quot;Output Voltage&quot; signal, you might set
-          the unit to &quot;V&quot; and scaling factor to 1.0.
-        </p>
+        <p className="font-medium">Notes:</p>
+        <ul className="mt-1 list-disc space-y-1 pl-5">
+          <li>Choose base units only (e.g., V, A, Ω, Hz, W, °C, s).</li>
+          <li>Use the Scaling Factor to convert prefixed units from your instrument into the base unit.</li>
+          <li>Example: if your instrument returns millivolts (mV) but you want Volts (V), set Unit to V and Scaling Factor to 0.001. A raw 250 mV becomes 0.25 V.</li>
+        </ul>
       </div>
     </div>
   );

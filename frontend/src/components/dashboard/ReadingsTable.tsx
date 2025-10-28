@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import type { Reading } from '../../services/dataService';
+import { formatWithSIPrefix } from '../../utils/format';
 
 interface ReadingsTableProps {
   readings: Reading[];
@@ -70,10 +71,15 @@ export function ReadingsTable({ readings }: ReadingsTableProps): ReactElement {
                             <span className="text-red-400">Error</span>
                           ) : (
                             <>
-                              <span className="text-primary-light">
-                                {data.value?.toFixed(2) ?? 'N/A'}
-                              </span>
-                              <span className="ml-1 text-slate-500">{data.unit}</span>
+                              {(() => {
+                                const f = formatWithSIPrefix(data.value, data.unit);
+                                return (
+                                  <>
+                                    <span className="text-primary-light">{f.valueDisplay}</span>
+                                    <span className="ml-1 text-slate-500">{f.unitDisplay}</span>
+                                  </>
+                                );
+                              })()}
                             </>
                           )}
                         </div>

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { ReactElement } from 'react';
 import type { Reading } from '../../services/dataService';
+import { formatWithSIPrefix } from '../../utils/format';
 
 interface LiveChartProps {
   readings: Reading[];
@@ -77,6 +78,14 @@ function SignalChart({ signalName, values, unit }: SignalChartProps): ReactEleme
   const maxValue = Math.max(...values);
   const range = maxValue - minValue || 1;
   const latestValue = values[values.length - 1];
+  // Choose display scaling based on the greatest absolute value to avoid unit flapping near zero
+  const maxAbs = Math.max(...values.map((v) => Math.abs(v)));
+  const basis = formatWithSIPrefix(maxAbs, unit);
+  const factor = basis.factor || 1;
+  const unitDisplay = basis.unitDisplay;
+  const minDisplay = (minValue / factor).toFixed(2);
+  const maxDisplay = (maxValue / factor).toFixed(2);
+  const latestDisplay = (latestValue / factor).toFixed(2);
   
   // Calculate SVG path for sparkline
   const width = 300;
@@ -95,9 +104,9 @@ function SignalChart({ signalName, values, unit }: SignalChartProps): ReactEleme
         <h3 className="font-medium text-slate-100">{signalName}</h3>
         <div className="text-right">
           <div className="text-2xl font-bold text-primary-light">
-            {latestValue.toFixed(2)}
+            {latestDisplay}
           </div>
-          <div className="text-xs text-slate-400">{unit}</div>
+          <div className="text-xs text-slate-400">{unitDisplay}</div>
         </div>
       </div>
       
@@ -131,8 +140,8 @@ function SignalChart({ signalName, values, unit }: SignalChartProps): ReactEleme
       </svg>
       
       <div className="mt-2 flex justify-between text-xs text-slate-500">
-        <span>Min: {minValue.toFixed(2)}</span>
-        <span>Max: {maxValue.toFixed(2)}</span>
+        <span>Min: {minDisplay} {unitDisplay}</span>
+        <span>Max: {maxDisplay} {unitDisplay}</span>
       </div>
     </div>
   );

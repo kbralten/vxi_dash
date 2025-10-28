@@ -116,6 +116,49 @@ class DataCollector:
                 return e
         return {}
 
+    def _normalize_unit_and_scale(self, unit: str, scale: float) -> (str, float):
+        """Normalize secondary units to base units by adjusting scale.
+
+        Only multiplicative prefixes are handled here. Units with offsets (e.g., °F) are left unchanged
+        because our scaling factor cannot encode an offset.
+        """
+        mapping: Dict[str, Dict[str, Any]] = {
+            "mV": {"base": "V", "mul": 1e-3},
+            "A": {"base": "A", "mul": 1.0},
+            "mA": {"base": "A", "mul": 1e-3},
+            "μA": {"base": "A", "mul": 1e-6},
+            "uA": {"base": "A", "mul": 1e-6},
+            "Ω": {"base": "Ω", "mul": 1.0},
+            "kΩ": {"base": "Ω", "mul": 1e3},
+            "MΩ": {"base": "Ω", "mul": 1e6},
+            "Hz": {"base": "Hz", "mul": 1.0},
+            "kHz": {"base": "Hz", "mul": 1e3},
+            "MHz": {"base": "Hz", "mul": 1e6},
+            "W": {"base": "W", "mul": 1.0},
+            "mW": {"base": "W", "mul": 1e-3},
+            # Leave dB/dBm as-is; dBm implies reference and offset that scaling cannot capture
+            "dB": {"base": "dB", "mul": 1.0},
+            "dBm": {"base": "dBm", "mul": 1.0},
+            "V": {"base": "V", "mul": 1.0},
+            "s": {"base": "s", "mul": 1.0},
+            "ms": {"base": "s", "mul": 1e-3},
+            "μs": {"base": "s", "mul": 1e-6},
+            "us": {"base": "s", "mul": 1e-6},
+            "ns": {"base": "s", "mul": 1e-9},
+            # Temperatures
+            "°C": {"base": "°C", "mul": 1.0},
+            "C": {"base": "°C", "mul": 1.0},
+            # "°F" left unchanged intentionally
+        }
+        if not unit:
+            return unit, scale
+        info = mapping.get(unit)
+        if not info:
+            return unit, scale
+        base = info["base"]
+        mul = float(info["mul"]) if isinstance(info["mul"], (int, float)) else 1.0
+        return base, scale * mul
+
     async def _execute_block(self, client: Any, commands: List[str]) -> None:
         for cmd in commands:
             # Treat queries as writes only if needed; usually enable/disable are writes
@@ -264,6 +307,7 @@ class DataCollector:
                             smc = self._lookup_signal_cfg(config, mode, sid)
                             unit = smc.get("unit", "")
                             scale = smc.get("scalingFactor", 1)
+                            unit, scale = self._normalize_unit_and_scale(unit, scale)
                             import re
                             match = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", response)
                             value = float(match.group()) if match else None
@@ -325,6 +369,7 @@ class DataCollector:
                     smc = self._lookup_signal_cfg(config, mode, sid)
                     unit = smc.get("unit", "")
                     scale = smc.get("scalingFactor", 1)
+                    unit, scale = self._normalize_unit_and_scale(unit, scale)
                     import re
                     match = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", response)
                     value = float(match.group()) if match else None
