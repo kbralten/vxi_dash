@@ -121,14 +121,16 @@ async def test_complete_e2e_workflow(monkeypatch):
         monitoring_data = {
             "name": "Power Supply Monitoring",
             "frequency_hz": 1.0,
-            "instrument_id": instrument_id,
-            "parameters": json.dumps({
-                "mode": "run",
-                "mode_parameters": {
-                    "frequency": "50Hz"
-                },
-                "signals": ["voltage", "current", "power"]
-            })
+            "instruments": [{
+                "instrument_id": instrument_id,
+                "parameters": json.dumps({
+                    "mode": "run",
+                    "mode_parameters": {
+                        "frequency": "50Hz"
+                    },
+                    "signals": ["voltage", "current", "power"]
+                })
+            }]
         }
         
         monitoring_response = await client.post("/api/monitoring/", json=monitoring_data)
@@ -142,14 +144,19 @@ async def test_complete_e2e_workflow(monkeypatch):
         monitoring = get_monitoring_response.json()
         assert monitoring["name"] == "Power Supply Monitoring"
         assert monitoring["frequency_hz"] == 1.0
-        assert monitoring["instrument_id"] == instrument_id
+        
+        # Verify instruments array structure
+        assert "instruments" in monitoring
+        assert len(monitoring["instruments"]) == 1
+        instrument_config = monitoring["instruments"][0]
+        assert instrument_config["instrument_id"] == instrument_id
         
         # Verify instrument is enriched in response
-        assert "instrument" in monitoring
-        assert monitoring["instrument"]["name"] == "Test Power Supply"
+        assert "instrument" in instrument_config
+        assert instrument_config["instrument"]["name"] == "Test Power Supply"
         
         # Verify parameters are stored correctly
-        stored_params = json.loads(monitoring["parameters"])
+        stored_params = json.loads(instrument_config["parameters"])
         assert stored_params["mode"] == "run"
         assert stored_params["mode_parameters"]["frequency"] == "50Hz"
         assert "voltage" in stored_params["signals"]
@@ -163,7 +170,7 @@ async def test_complete_e2e_workflow(monkeypatch):
     
     # Step 6: Simulate data collection based on configuration
     config = json.loads(instrument["description"])
-    params = json.loads(monitoring["parameters"])
+    params = json.loads(monitoring["instruments"][0]["parameters"])
     
     # Enable the mode
     mode = params["mode"]
@@ -292,11 +299,13 @@ async def test_multiple_instruments_monitoring():
         monitoring1_data = {
             "name": "Monitor Instrument 1",
             "frequency_hz": 2.0,
-            "instrument_id": inst1_id,
-            "parameters": json.dumps({
-                "mode": "standby",
-                "signals": ["voltage"]
-            })
+            "instruments": [{
+                "instrument_id": inst1_id,
+                "parameters": json.dumps({
+                    "mode": "standby",
+                    "signals": ["voltage"]
+                })
+            }]
         }
         
         mon1_response = await client.post("/api/monitoring/", json=monitoring1_data)
@@ -306,11 +315,13 @@ async def test_multiple_instruments_monitoring():
         monitoring2_data = {
             "name": "Monitor Instrument 2",
             "frequency_hz": 5.0,
-            "instrument_id": inst2_id,
-            "parameters": json.dumps({
-                "mode": "run",
-                "signals": ["current"]
-            })
+            "instruments": [{
+                "instrument_id": inst2_id,
+                "parameters": json.dumps({
+                    "mode": "run",
+                    "signals": ["current"]
+                })
+            }]
         }
         
         mon2_response = await client.post("/api/monitoring/", json=monitoring2_data)
@@ -329,8 +340,11 @@ async def test_multiple_instruments_monitoring():
         assert "Monitor Instrument 2" in setup_names
         
         for setup in all_setups:
-            assert "instrument" in setup
-            assert setup["instrument"]["name"] in ["Instrument 1", "Instrument 2"]
+            assert "instruments" in setup
+            assert len(setup["instruments"]) == 1
+            instrument_config = setup["instruments"][0]
+            assert "instrument" in instrument_config
+            assert instrument_config["instrument"]["name"] in ["Instrument 1", "Instrument 2"]
 
 
 @pytest.mark.asyncio
