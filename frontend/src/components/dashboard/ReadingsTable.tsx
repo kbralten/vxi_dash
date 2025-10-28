@@ -55,7 +55,7 @@ export function ReadingsTable({ readings }: ReadingsTableProps): ReactElement {
                 </td>
                 <td className="px-4 py-3 text-sm">
                   <span className="rounded bg-slate-700 px-2 py-1 text-xs font-medium text-slate-200">
-                    {reading.mode}
+                    {typeof reading.mode === 'string' ? reading.mode : (reading.mode?.name ?? 'Unknown mode')}
                   </span>
                 </td>
                 <td className="px-4 py-3">

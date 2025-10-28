@@ -6,7 +6,8 @@ export interface Reading {
   setup_name: string;
   instrument_id: number;
   instrument_name: string;
-  mode: string;
+  // Backend now returns full mode objects; accept either string or object
+  mode: string | { name?: string; [key: string]: any };
   readings: {
     [signalName: string]: {
       value: number | null;

@@ -1,25 +1,71 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { fetchMonitoringSetups, deleteMonitoringSetup, updateMonitoringSetup } from '../../services/monitoringService';
+import {
+  fetchMonitoringSetups,
+  deleteMonitoringSetup,
+  updateMonitoringSetup,
+  startMonitoringSetup,
+  stopMonitoringSetup,
+  getMonitoringStatus,
+  resetMonitoringReadings,
+} from '../../services/monitoringService';
 import type { MonitoringSetup } from '../../types/monitoring';
 
 export function MonitoringSetupList(): ReactElement {
   const [setups, setSetups] = useState<MonitoringSetup[]>([]);
+  const setupsRef = useRef<MonitoringSetup[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [statusById, setStatusById] = useState<Record<number, { running: boolean; last_success?: string | null; last_error?: string | null }>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<{ name: string; frequency_hz: number }>({
     name: '',
     frequency_hz: 1,
   });
 
-  const loadSetups = () => {
-    fetchMonitoringSetups()
-      .then(setSetups)
-      .catch((err: Error) => setError(err.message));
+  const loadSetups = async () => {
+    try {
+      const data = await fetchMonitoringSetups();
+      setSetups(data);
+      setupsRef.current = data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load monitoring setups');
+    }
   };
 
   useEffect(() => {
     loadSetups();
+    let timer: number | undefined;
+    const refreshHandler = () => {
+      loadSetups();
+    };
+    window.addEventListener('monitoring:refresh', refreshHandler as EventListener);
+    const poll = async () => {
+      try {
+        // Fetch statuses for current setups
+        const entries = await Promise.all(
+          (setupsRef.current || []).map(async (s) => {
+            try {
+              const st = await getMonitoringStatus(s.id);
+              return [s.id, st] as const;
+            } catch {
+              return [s.id, { running: false }] as const;
+            }
+          })
+        );
+        const next: Record<number, any> = {};
+        for (const [id, st] of entries) next[id] = st;
+        if (entries.length > 0) setStatusById(next);
+      } catch {
+        // ignore polling errors
+      } finally {
+        timer = window.setTimeout(poll, 2000);
+      }
+    };
+    timer = window.setTimeout(poll, 200);
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      window.removeEventListener('monitoring:refresh', refreshHandler as EventListener);
+    };
   }, []);
 
   const handleDelete = async (id: number, name: string) => {
@@ -49,6 +95,43 @@ export function MonitoringSetupList(): ReactElement {
       loadSetups();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update monitoring setup');
+    }
+  };
+
+  const refreshStatus = async (id: number) => {
+    try {
+      const st = await getMonitoringStatus(id);
+      setStatusById((prev) => ({ ...prev, [id]: st }));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleStart = async (id: number) => {
+    try {
+      await startMonitoringSetup(id);
+      await refreshStatus(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start monitoring');
+    }
+  };
+
+  const handleStop = async (id: number) => {
+    try {
+      await stopMonitoringSetup(id);
+      await refreshStatus(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop monitoring');
+    }
+  };
+
+  const handleReset = async (id: number, name: string) => {
+    if (!confirm(`Reset readings for setup "${name}"? This cannot be undone.`)) return;
+    try {
+      await resetMonitoringReadings(id);
+      // No UI list change; perhaps show a toast in future
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset readings');
     }
   };
 
@@ -104,9 +187,11 @@ export function MonitoringSetupList(): ReactElement {
           ) : (
             <>
               <header className="flex items-center justify-between">
-                <h3 className="font-semibold text-primary-light">{setup.name}</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  <h3 className="font-semibold text-primary-light">{setup.name}</h3>
                   <span className="text-xs uppercase text-slate-400">{setup.frequency_hz} Hz</span>
+                </div>
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleEdit(setup)}
                     className="rounded bg-slate-700 px-2 py-1 text-xs font-medium text-slate-300 hover:bg-slate-600"
@@ -121,9 +206,65 @@ export function MonitoringSetupList(): ReactElement {
                   </button>
                 </div>
               </header>
-              <p className="mt-1 text-sm text-slate-300">
-                Instrument: {setup.instrument?.name ?? `#${setup.instrument_id}`}
-              </p>
+              {Array.isArray(setup.instruments) && setup.instruments.length > 0 ? (
+                <div className="mt-2 text-sm text-slate-300">
+                  <div className="text-xs text-slate-400 mb-1">Targets:</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {setup.instruments.map((t, i) => (
+                      <li key={i}>
+                        {t.instrument?.name ?? `#${t.instrument_id}`} – Mode:{' '}
+                        {String((t.parameters as any)?.modeName || (t.parameters as any)?.modeId || '—')}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <>
+                  <p className="mt-1 text-sm text-slate-300">
+                    Instrument: {setup.instrument?.name ?? `#${setup.instrument_id}`}
+                  </p>
+                  {(setup as any).parameters && (
+                    <p className="mt-1 text-xs text-slate-400">
+                      Mode: {String((setup as any).parameters?.modeName || (setup as any).parameters?.modeId || '—')}
+                    </p>
+                  )}
+                </>
+              )}
+              <div className="mt-2 flex items-center justify-between">
+                <div className="text-xs text-slate-400">
+                  {statusById[setup.id]?.running ? (
+                    <span className="text-green-400">Running</span>
+                  ) : (
+                    <span className="text-slate-400">Stopped</span>
+                  )}
+                  {statusById[setup.id]?.last_success && (
+                    <span className="ml-2">Last success: {new Date(statusById[setup.id]!.last_success as string).toLocaleTimeString()}</span>
+                  )}
+                  {statusById[setup.id]?.last_error && (
+                    <span className="ml-2 text-red-400">Error: {statusById[setup.id]!.last_error}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleStart(setup.id)}
+                    className="rounded bg-emerald-500/20 px-2 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/30"
+                  >
+                    Start
+                  </button>
+                  <button
+                    onClick={() => handleStop(setup.id)}
+                    className="rounded bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-300 hover:bg-yellow-500/30"
+                  >
+                    Stop
+                  </button>
+                  <button
+                    onClick={() => handleReset(setup.id, setup.name)}
+                    className="rounded bg-slate-700 px-2 py-1 text-xs font-medium text-slate-300 hover:bg-slate-600"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
             </>
           )}
         </article>

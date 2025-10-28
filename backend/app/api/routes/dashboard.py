@@ -19,16 +19,29 @@ async def dashboard_summary() -> Dict[str, Any]:
     # Build instrument lookup
     instruments_by_id = {inst["id"]: inst for inst in instruments}
     
-    # Enrich setups with instrument data
+    # Enrich setups with instrument data (single + multi)
     for setup in setups:
         instrument_id = setup.get("instrument_id")
         if instrument_id and instrument_id in instruments_by_id:
             setup["instrument"] = instruments_by_id[instrument_id]
         else:
             setup["instrument"] = None
+        targets = setup.get("instruments") or []
+        if targets:
+            setup["instruments"] = [
+                {**t, "instrument": instruments_by_id.get(t.get("instrument_id"))}
+                for t in targets
+            ]
     
     active_count = len(setups)
-    unique_instruments = {setup.get("instrument_id") for setup in setups if setup.get("instrument_id")}
+    # Count unique instruments across single + multi shapes
+    unique_instruments = set()
+    for setup in setups:
+        if setup.get("instrument_id"):
+            unique_instruments.add(setup["instrument_id"])
+        for t in setup.get("instruments") or []:
+            if t.get("instrument_id") is not None:
+                unique_instruments.add(t["instrument_id"])
 
     return {
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -85,6 +98,11 @@ async def stop_monitoring(setup_id: int) -> Dict[str, str]:
     """Stop data collection for a monitoring setup."""
     collector = get_data_collector()
     collector.stop_monitoring(setup_id)
+    # Attempt to run disable commands once on stop
+    try:
+        await collector.disable_mode_for_setup(setup_id)
+    except Exception:
+        pass
     
     return {"status": "stopped", "setup_id": str(setup_id)}
 
@@ -99,3 +117,18 @@ async def collect_now(setup_id: int) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="Failed to collect data")
     
     return reading
+
+
+@router.get("/monitoring/{setup_id}/status")
+async def monitoring_status(setup_id: int) -> Dict[str, Any]:
+    """Return status info for a monitoring setup (running, last success/error)."""
+    collector = get_data_collector()
+    return collector.get_status(setup_id)
+
+
+@router.post("/monitoring/{setup_id}/reset")
+async def reset_monitoring_data(setup_id: int) -> Dict[str, Any]:
+    """Clear stored readings for a monitoring setup."""
+    collector = get_data_collector()
+    removed = collector.reset_readings_for_setup(setup_id)
+    return {"status": "reset", "removed": removed, "setup_id": str(setup_id)}

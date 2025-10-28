@@ -19,6 +19,9 @@ class DataCollector:
         self._ensure_file_exists()
         self._running = False
         self._tasks: Dict[int, asyncio.Task] = {}
+        # Track enabled modes per (setup_id, instrument_id)
+        self._enabled_modes: Dict[str, str] = {}
+        self._last_status: Dict[int, Dict[str, Any]] = {}
 
     def _ensure_file_exists(self) -> None:
         """Create empty readings file if it doesn't exist."""
@@ -43,6 +46,171 @@ class DataCollector:
         
         self.readings_file.write_text(json.dumps(readings, indent=2))
 
+    def _parse_instrument_config(self, instrument: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Parse the instrument description JSON into a dict.
+
+        Expected shape (from frontend wizard):
+        {
+          "description": str,
+          "signals": [{ id, name, measureCommand }],
+          "modes": [{ id, name, enableCommands, disableCommands, parameters: [] }],
+          "signalModeConfigs": [{ modeId, signalId, unit, scalingFactor }]
+        }
+        """
+        try:
+            return json.loads(instrument.get("description") or "{}")
+        except Exception:
+            return None
+
+    def _select_mode(self, cfg: Dict[str, Any], setup_params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        modes = cfg.get("modes", [])
+        if not modes:
+            return None
+        mid = setup_params.get("modeId") or setup_params.get("mode_id")
+        mname = setup_params.get("modeName") or setup_params.get("mode")
+        if mid:
+            for m in modes:
+                if m.get("id") == mid:
+                    return m
+        if mname:
+            for m in modes:
+                if m.get("name") == mname:
+                    return m
+        # default to first
+        return modes[0]
+
+    def _selected_signal_ids(self, cfg: Dict[str, Any], setup_params: Dict[str, Any]) -> List[str]:
+        # Accept ids or names; default to all signals
+        sigs = cfg.get("signals", [])
+        all_ids = [s.get("id") for s in sigs if s.get("id")]
+        ids = setup_params.get("signalIds") or setup_params.get("signals") or setup_params.get("selectedSignals")
+        if not ids:
+            return all_ids
+        # Map names to ids if needed
+        name_to_id = {s.get("name"): s.get("id") for s in sigs}
+        resolved: List[str] = []
+        for item in ids:
+            if item in all_ids:
+                resolved.append(item)
+            elif item in name_to_id and name_to_id[item]:
+                resolved.append(name_to_id[item])
+        return resolved or all_ids
+
+    def _expand_commands(self, block: str, params: Dict[str, Any]) -> List[str]:
+        """Expand a multi-line SCPI block with {param} placeholders."""
+        if not block:
+            return []
+        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+        def subst(cmd: str) -> str:
+            out = cmd
+            for k, v in params.items():
+                out = out.replace("{" + str(k) + "}", str(v))
+            return out
+        return [subst(ln) for ln in lines]
+
+    def _lookup_signal_cfg(self, cfg: Dict[str, Any], mode: Dict[str, Any], signal_id: str) -> Dict[str, Any]:
+        entries = cfg.get("signalModeConfigs", [])
+        mid = mode.get("id")
+        for e in entries:
+            if e.get("modeId") == mid and e.get("signalId") == signal_id:
+                return e
+        return {}
+
+    async def _execute_block(self, client: Any, commands: List[str]) -> None:
+        for cmd in commands:
+            # Treat queries as writes only if needed; usually enable/disable are writes
+            await client.write(cmd)
+
+    async def _enable_for_target(self, setup_id: int, instrument: Dict[str, Any], params: Dict[str, Any]) -> None:
+        cfg = self._parse_instrument_config(instrument)
+        if not cfg:
+            return
+        mode = self._select_mode(cfg, params)
+        if not mode:
+            return
+        key = f"{setup_id}:{instrument.get('id')}"
+        if self._enabled_modes.get(key) == (mode.get("id") or mode.get("name") or ""):
+            return
+        address = instrument.get("address", "")
+        client = await get_vxi11_client(address)
+        enable_cmds = self._expand_commands(mode.get("enableCommands", ""), params.get("modeParams", params))
+        await self._execute_block(client, enable_cmds)
+        self._enabled_modes[key] = mode.get("id") or mode.get("name") or ""
+
+    async def enable_mode_for_setup(self, setup_id: int) -> None:
+        storage = get_storage()
+        setup = storage.get_monitoring_setup(setup_id)
+        if not setup:
+            return
+        targets = setup.get("instruments") or []
+        if targets:
+            for t in targets:
+                instrument = storage.get_instrument(t.get("instrument_id"))
+                if not instrument:
+                    continue
+                params = t.get("parameters") or {}
+                if isinstance(params, str):
+                    try:
+                        params = json.loads(params)
+                    except Exception:
+                        params = {}
+                await self._enable_for_target(setup_id, instrument, params)
+        else:
+            instrument = storage.get_instrument(setup.get("instrument_id"))
+            if not instrument:
+                return
+            params = setup.get("parameters") or {}
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except Exception:
+                    params = {}
+            await self._enable_for_target(setup_id, instrument, params)
+
+    async def _disable_for_target(self, setup_id: int, instrument: Dict[str, Any], params: Dict[str, Any]) -> None:
+        cfg = self._parse_instrument_config(instrument)
+        if not cfg:
+            return
+        mode = self._select_mode(cfg, params)
+        if not mode:
+            return
+        address = instrument.get("address", "")
+        client = await get_vxi11_client(address)
+        disable_cmds = self._expand_commands(mode.get("disableCommands", ""), params.get("modeParams", params))
+        await self._execute_block(client, disable_cmds)
+        key = f"{setup_id}:{instrument.get('id')}"
+        self._enabled_modes.pop(key, None)
+
+    async def disable_mode_for_setup(self, setup_id: int) -> None:
+        storage = get_storage()
+        setup = storage.get_monitoring_setup(setup_id)
+        if not setup:
+            return
+        targets = setup.get("instruments") or []
+        if targets:
+            for t in targets:
+                instrument = storage.get_instrument(t.get("instrument_id"))
+                if not instrument:
+                    continue
+                params = t.get("parameters") or {}
+                if isinstance(params, str):
+                    try:
+                        params = json.loads(params)
+                    except Exception:
+                        params = {}
+                await self._disable_for_target(setup_id, instrument, params)
+        else:
+            instrument = storage.get_instrument(setup.get("instrument_id"))
+            if not instrument:
+                return
+            params = setup.get("parameters") or {}
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except Exception:
+                    params = {}
+            await self._disable_for_target(setup_id, instrument, params)
+
     async def collect_from_setup(self, setup_id: int) -> Optional[Dict[str, Any]]:
         """Collect data from a single monitoring setup."""
         storage = get_storage()
@@ -52,72 +220,123 @@ class DataCollector:
         if not setup:
             return None
         
-        # Get instrument
-        instrument = storage.get_instrument(setup["instrument_id"])
-        if not instrument or not instrument.get("is_active"):
-            return None
-        
         try:
-            # Parse instrument configuration
-            config = json.loads(instrument["description"])
-            params = json.loads(setup["parameters"])
-            
-            # Parse address
-            address = instrument["address"]
-            host_port = address.split("/")[0] if "/" in address else address
-            
-            # Create VXI-11 client
-            client = await get_vxi11_client(host_port)
-            
-            # Get mode configuration
-            mode = params.get("mode")
-            if not mode or mode not in config.get("mode", {}):
+            last_reading: Optional[Dict[str, Any]] = None
+
+            # Ensure modes enabled for all targets (single or multi)
+            await self.enable_mode_for_setup(setup_id)
+
+            # Multi-instrument path
+            targets = setup.get("instruments") or []
+            if targets:
+                for t in targets:
+                    instrument = storage.get_instrument(t.get("instrument_id"))
+                    if not instrument or not instrument.get("is_active"):
+                        continue
+                    params = t.get("parameters") or {}
+                    if isinstance(params, str):
+                        try:
+                            params = json.loads(params)
+                        except Exception:
+                            params = {}
+                    config = self._parse_instrument_config(instrument)
+                    if not config:
+                        continue
+                    # Create client
+                    address = instrument.get("address", "")
+                    client = await get_vxi11_client(address)
+                    # Mode and signals
+                    mode = self._select_mode(config, params)
+                    if not mode:
+                        continue
+                    signal_ids = self._selected_signal_ids(config, params)
+                    sig_by_id = {s.get("id"): s for s in config.get("signals", [])}
+                    readings: Dict[str, Any] = {}
+                    for sid in signal_ids:
+                        sig = sig_by_id.get(sid)
+                        if not sig:
+                            continue
+                        measure_command = sig.get("measureCommand") or ""
+                        if not measure_command:
+                            continue
+                        try:
+                            response = await client.query(measure_command)
+                            smc = self._lookup_signal_cfg(config, mode, sid)
+                            unit = smc.get("unit", "")
+                            scale = smc.get("scalingFactor", 1)
+                            import re
+                            match = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", response)
+                            value = float(match.group()) if match else None
+                            scaled_value = (value * scale) if (value is not None) else None
+                            readings[sig.get("name") or sid] = {
+                                "value": scaled_value,
+                                "raw_value": value,
+                                "unit": unit,
+                                "raw_response": response,
+                            }
+                        except Exception as e:
+                            readings[sig.get("name") or sid] = {"value": None, "error": str(e)}
+                    reading = {
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "setup_id": setup_id,
+                        "setup_name": setup["name"],
+                        "instrument_id": instrument["id"],
+                        "instrument_name": instrument["name"],
+                        "mode": mode,
+                        "readings": readings,
+                    }
+                    self._save_reading(reading)
+                    last_reading = reading
+                # Update last status after processing all
+                if last_reading is not None:
+                    self._last_status[setup_id] = {"last_success": last_reading["timestamp"], "last_error": None}
+                return last_reading
+
+            # Single-instrument fallback
+            instrument = storage.get_instrument(setup.get("instrument_id"))
+            if not instrument or not instrument.get("is_active"):
                 return None
-            
-            # Collect readings for each signal
-            readings = {}
-            signals = params.get("signals", [])
-            
-            for signal_name in signals:
-                if signal_name not in config.get("signal", {}):
-                    continue
-                
-                # Get measure command
-                measure_command = config["signal"][signal_name]
-                
+            params = setup.get("parameters") or {}
+            if isinstance(params, str):
                 try:
-                    # Execute command
+                    params = json.loads(params)
+                except Exception:
+                    params = {}
+            config = self._parse_instrument_config(instrument)
+            if not config:
+                return None
+            address = instrument.get("address", "")
+            client = await get_vxi11_client(address)
+            mode = self._select_mode(config, params)
+            if not mode:
+                return None
+            signal_ids = self._selected_signal_ids(config, params)
+            sig_by_id = {s.get("id"): s for s in config.get("signals", [])}
+            readings: Dict[str, Any] = {}
+            for sid in signal_ids:
+                sig = sig_by_id.get(sid)
+                if not sig:
+                    continue
+                measure_command = sig.get("measureCommand") or ""
+                if not measure_command:
+                    continue
+                try:
                     response = await client.query(measure_command)
-                    
-                    # Get signal-mode configuration for units and scaling
-                    signal_config = config.get("signal_mode_config", {}).get(signal_name, {}).get(mode, {})
-                    unit = signal_config.get("unit", "")
-                    scale = signal_config.get("scale", 1.0)
-                    
-                    # Try to parse numeric value from response
-                    try:
-                        # Extract first number from response
-                        import re
-                        match = re.search(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', response)
-                        value = float(match.group()) if match else 0.0
-                        scaled_value = value * scale
-                    except (ValueError, AttributeError):
-                        value = 0.0
-                        scaled_value = 0.0
-                    
-                    readings[signal_name] = {
+                    smc = self._lookup_signal_cfg(config, mode, sid)
+                    unit = smc.get("unit", "")
+                    scale = smc.get("scalingFactor", 1)
+                    import re
+                    match = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", response)
+                    value = float(match.group()) if match else None
+                    scaled_value = (value * scale) if (value is not None) else None
+                    readings[sig.get("name") or sid] = {
                         "value": scaled_value,
                         "raw_value": value,
                         "unit": unit,
                         "raw_response": response,
                     }
                 except Exception as e:
-                    readings[signal_name] = {
-                        "value": None,
-                        "error": str(e),
-                    }
-            
-            # Create reading record
+                    readings[sig.get("name") or sid] = {"value": None, "error": str(e)}
             reading = {
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "setup_id": setup_id,
@@ -127,13 +346,13 @@ class DataCollector:
                 "mode": mode,
                 "readings": readings,
             }
-            
-            # Save to file
             self._save_reading(reading)
-            
+            self._last_status[setup_id] = {"last_success": reading["timestamp"], "last_error": None}
             return reading
             
         except Exception as e:
+            ts = datetime.utcnow().isoformat() + "Z"
+            self._last_status[setup_id] = {"last_success": None, "last_error": str(e), "timestamp": ts}
             return {
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "setup_id": setup_id,
@@ -179,6 +398,8 @@ class DataCollector:
         if setup_id in self._tasks:
             self._tasks[setup_id].cancel()
             del self._tasks[setup_id]
+        # Mark disabled; disable commands executed via API endpoint to allow awaited call
+        self._enabled_modes.pop(setup_id, None)
 
     def stop_all(self) -> None:
         """Stop all monitoring tasks."""
@@ -214,6 +435,20 @@ class DataCollector:
                 continue
         
         return filtered
+
+    def get_status(self, setup_id: int) -> Dict[str, Any]:
+        """Return running status and last activity for a setup."""
+        running = setup_id in self._tasks and not self._tasks[setup_id].cancelled()
+        status = self._last_status.get(setup_id, {})
+        return {"running": running, **status}
+
+    def reset_readings_for_setup(self, setup_id: int) -> int:
+        """Remove readings for a specific setup. Returns number removed."""
+        readings = self._load_readings()
+        before = len(readings)
+        readings = [r for r in readings if r.get("setup_id") != setup_id]
+        self.readings_file.write_text(json.dumps(readings, indent=2))
+        return before - len(readings)
 
 
 # Singleton instance
