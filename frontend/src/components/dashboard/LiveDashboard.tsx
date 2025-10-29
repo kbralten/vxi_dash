@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import type { ReactElement } from 'react';
-import { fetchLiveData, startMonitoring, stopMonitoring, collectNow } from '../../services/dataService';
+import { fetchLiveData } from '../../services/dataService';
 import type { Reading } from '../../services/dataService';
 import { fetchMonitoringSetups } from '../../services/monitoringService';
 import type { MonitoringSetup } from '../../types/monitoring';
 import { LiveChart } from './LiveChart';
 import { ReadingsTable } from './ReadingsTable';
-import { MonitoringControls } from './MonitoringControls';
 import { LiveStateMachine } from './LiveStateMachine';
 
 export function LiveDashboard(): ReactElement {
@@ -47,32 +46,6 @@ export function LiveDashboard(): ReactElement {
       return () => clearInterval(interval);
     }
   }, [autoRefresh, refreshInterval]);
-
-  const handleStartMonitoring = async (setupId: number) => {
-    try {
-      await startMonitoring(setupId);
-      await loadData();
-    } catch (error) {
-      console.error('Failed to start monitoring:', error);
-    }
-  };
-
-  const handleStopMonitoring = async (setupId: number) => {
-    try {
-      await stopMonitoring(setupId);
-    } catch (error) {
-      console.error('Failed to stop monitoring:', error);
-    }
-  };
-
-  const handleCollectNow = async (setupId: number) => {
-    try {
-      const reading = await collectNow(setupId);
-      setReadings(prev => [...prev, reading]);
-    } catch (error) {
-      console.error('Failed to collect data:', error);
-    }
-  };
 
   // Get unique setups from readings
   const setups = Array.from(
@@ -170,14 +143,6 @@ export function LiveDashboard(): ReactElement {
           ))}
         </div>
       </div>
-
-      {/* Monitoring Controls */}
-      <MonitoringControls
-        setups={setups}
-        onStart={handleStartMonitoring}
-        onStop={handleStopMonitoring}
-        onCollect={handleCollectNow}
-      />
 
       {/* Live State Machine Visualization */}
       {showStateMachine && selectedSetupDetails && (
