@@ -8,18 +8,24 @@ import {
   stopMonitoringSetup,
   getMonitoringStatus,
   resetMonitoringReadings,
+  startStateMachine,
+  stopStateMachine,
+  getStateMachineStatus,
+  type StateMachineStatus,
 } from '../../services/monitoringService';
 import { fetchInstruments } from '../../services/instrumentService';
 import type { MonitoringSetup, MonitoringUpdate, State, Transition } from '../../types/monitoring';
 import type { Instrument } from '../../types/instrument';
 import type { InstrumentConfiguration, Mode } from '../../types/instrumentConfig';
 import { StateMachineEditor } from './StateMachineEditor';
+import { validateStateMachine, formatValidationMessage } from '../../utils/stateMachineValidation';
 
 export function MonitoringSetupList(): ReactElement {
   const [setups, setSetups] = useState<MonitoringSetup[]>([]);
   const setupsRef = useRef<MonitoringSetup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [statusById, setStatusById] = useState<Record<number, { running: boolean; last_success?: string | null; last_error?: string | null }>>({});
+  const [smStatusById, setSmStatusById] = useState<Record<number, StateMachineStatus>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [editForm, setEditForm] = useState<{
@@ -70,6 +76,28 @@ export function MonitoringSetupList(): ReactElement {
         const next: Record<number, any> = {};
         for (const [id, st] of entries) next[id] = st;
         if (entries.length > 0) setStatusById(next);
+
+        // Fetch state machine statuses for setups that have state machines
+        const smEntries = await Promise.all(
+          (setupsRef.current || [])
+            .filter(s => s.states && s.states.length > 0)
+            .map(async (s) => {
+              try {
+                const smSt = await getStateMachineStatus(s.id);
+                return [s.id, smSt] as const;
+              } catch {
+                return null;
+              }
+            })
+        );
+        const nextSm: Record<number, StateMachineStatus> = {};
+        for (const entry of smEntries) {
+          if (entry) {
+            const [id, smSt] = entry;
+            nextSm[id] = smSt;
+          }
+        }
+        if (Object.keys(nextSm).length > 0) setSmStatusById(nextSm);
       } catch {
         // ignore polling errors
       } finally {
@@ -109,6 +137,25 @@ export function MonitoringSetupList(): ReactElement {
 
   const handleUpdate = async (id: number) => {
     try {
+      // Validate state machine if states are defined
+      if (editForm.states.length > 0) {
+        const validation = validateStateMachine(editForm.states, editForm.transitions, editForm.initialStateID);
+        
+        if (!validation.valid) {
+          const message = formatValidationMessage(validation);
+          setError(`State machine validation failed:\n\n${message}`);
+          return;
+        }
+
+        // Show warnings but allow proceeding
+        if (validation.warnings.length > 0) {
+          const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
+          if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to save anyway?`)) {
+            return;
+          }
+        }
+      }
+
       // Convert interval seconds back to frequency_hz for the API
       const freqHz = editForm.frequency_seconds > 0 ? 1 / editForm.frequency_seconds : 0;
       const updateData: MonitoringUpdate = {
@@ -165,6 +212,48 @@ export function MonitoringSetupList(): ReactElement {
       // No UI list change; perhaps show a toast in future
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset readings');
+    }
+  };
+
+  const handleStartStateMachine = async (id: number) => {
+    try {
+      // Pre-start validation
+      const setup = setups.find(s => s.id === id);
+      if (setup && setup.states && setup.states.length > 0) {
+        const validation = validateStateMachine(setup.states, setup.transitions || [], setup.initialStateID);
+        
+        if (!validation.valid) {
+          const message = formatValidationMessage(validation);
+          setError(`Cannot start state machine:\n\n${message}`);
+          return;
+        }
+
+        // Show warnings but allow proceeding
+        if (validation.warnings.length > 0) {
+          const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
+          if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to start anyway?`)) {
+            return;
+          }
+        }
+      }
+
+      await startStateMachine(id);
+      // Refresh state machine status
+      const smSt = await getStateMachineStatus(id);
+      setSmStatusById((prev) => ({ ...prev, [id]: smSt }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start state machine');
+    }
+  };
+
+  const handleStopStateMachine = async (id: number) => {
+    try {
+      await stopStateMachine(id);
+      // Refresh state machine status
+      const smSt = await getStateMachineStatus(id);
+      setSmStatusById((prev) => ({ ...prev, [id]: smSt }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop state machine');
     }
   };
 
@@ -299,8 +388,16 @@ export function MonitoringSetupList(): ReactElement {
               </header>
               {setup.states && setup.states.length > 0 && (
                 <div className="mt-3 rounded border border-primary-light/30 bg-primary-dark/20 p-3">
-                  <div className="text-xs font-semibold text-primary-light mb-2">State Machine Enabled</div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-semibold text-primary-light">State Machine Enabled</div>
+                    {smStatusById[setup.id]?.is_running && (
+                      <span className="text-xs font-medium text-green-400 flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                        Running
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs mb-2">
                     <div>
                       <span className="text-slate-400">States:</span>
                       <span className="ml-1 text-white font-medium">{setup.states.length}</span>
@@ -316,6 +413,22 @@ export function MonitoringSetupList(): ReactElement {
                       </span>
                     </div>
                   </div>
+                  {smStatusById[setup.id]?.is_running && smStatusById[setup.id]?.current_state_id && (
+                    <div className="pt-2 border-t border-primary-light/20">
+                      <div className="text-xs">
+                        <span className="text-slate-400">Current State:</span>
+                        <span className="ml-1 text-primary-light font-semibold">
+                          {setup.states.find(s => s.id === smStatusById[setup.id].current_state_id)?.name || smStatusById[setup.id].current_state_id}
+                        </span>
+                      </div>
+                      {smStatusById[setup.id]?.time_in_current_state !== null && (
+                        <div className="text-xs mt-1">
+                          <span className="text-slate-400">Time in state:</span>
+                          <span className="ml-1 text-white">{smStatusById[setup.id].time_in_current_state!.toFixed(1)}s</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {Array.isArray(setup.instruments) && setup.instruments.length > 0 ? (
@@ -357,18 +470,39 @@ export function MonitoringSetupList(): ReactElement {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleStart(setup.id)}
-                    className="rounded bg-emerald-500/20 px-2 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/30"
-                  >
-                    Start
-                  </button>
-                  <button
-                    onClick={() => handleStop(setup.id)}
-                    className="rounded bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-300 hover:bg-yellow-500/30"
-                  >
-                    Stop
-                  </button>
+                  {setup.states && setup.states.length > 0 ? (
+                    <>
+                      <button
+                        onClick={() => handleStartStateMachine(setup.id)}
+                        disabled={smStatusById[setup.id]?.is_running}
+                        className="rounded bg-primary-light/20 px-2 py-1 text-xs font-medium text-primary-light hover:bg-primary-light/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Start SM
+                      </button>
+                      <button
+                        onClick={() => handleStopStateMachine(setup.id)}
+                        disabled={!smStatusById[setup.id]?.is_running}
+                        className="rounded bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-300 hover:bg-yellow-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Stop SM
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleStart(setup.id)}
+                        className="rounded bg-emerald-500/20 px-2 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/30"
+                      >
+                        Start
+                      </button>
+                      <button
+                        onClick={() => handleStop(setup.id)}
+                        className="rounded bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-300 hover:bg-yellow-500/30"
+                      >
+                        Stop
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => handleDownloadCsv(setup)}
                     className="rounded bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300 hover:bg-blue-500/30"

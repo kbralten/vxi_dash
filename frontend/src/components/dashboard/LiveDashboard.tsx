@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import type { ReactElement } from 'react';
 import { fetchLiveData, startMonitoring, stopMonitoring, collectNow } from '../../services/dataService';
 import type { Reading } from '../../services/dataService';
+import { fetchMonitoringSetups } from '../../services/monitoringService';
+import type { MonitoringSetup } from '../../types/monitoring';
 import { LiveChart } from './LiveChart';
 import { ReadingsTable } from './ReadingsTable';
 import { MonitoringControls } from './MonitoringControls';
+import { LiveStateMachine } from './LiveStateMachine';
 
 export function LiveDashboard(): ReactElement {
   const [readings, setReadings] = useState<Reading[]>([]);
@@ -12,6 +15,7 @@ export function LiveDashboard(): ReactElement {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(5000); // 5 seconds
   const [loading, setLoading] = useState(false);
+  const [monitoringSetups, setMonitoringSetups] = useState<MonitoringSetup[]>([]);
 
   const loadData = async () => {
     try {
@@ -25,8 +29,18 @@ export function LiveDashboard(): ReactElement {
     }
   };
 
+  const loadMonitoringSetups = async () => {
+    try {
+      const setups = await fetchMonitoringSetups();
+      setMonitoringSetups(setups);
+    } catch (error) {
+      console.error('Failed to load monitoring setups:', error);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    loadMonitoringSetups();
     
     if (autoRefresh) {
       const interval = setInterval(loadData, refreshInterval);
@@ -71,6 +85,19 @@ export function LiveDashboard(): ReactElement {
   const filteredReadings = selectedSetup
     ? readings.filter(r => r.setup_id === selectedSetup)
     : readings;
+
+  // Get state machine setups (setups with states defined)
+  const stateMachineSetups = monitoringSetups.filter(
+    setup => setup.states && setup.states.length > 0
+  );
+
+  // Get the selected setup details if it has a state machine
+  const selectedSetupDetails = selectedSetup 
+    ? monitoringSetups.find(s => s.id === selectedSetup)
+    : null;
+  const showStateMachine = selectedSetupDetails && 
+    selectedSetupDetails.states && 
+    selectedSetupDetails.states.length > 0;
 
   return (
     <div className="space-y-6">
@@ -151,6 +178,34 @@ export function LiveDashboard(): ReactElement {
         onStop={handleStopMonitoring}
         onCollect={handleCollectNow}
       />
+
+      {/* Live State Machine Visualization */}
+      {showStateMachine && selectedSetupDetails && (
+        <LiveStateMachine
+          setupId={selectedSetupDetails.id}
+          setupName={selectedSetupDetails.name}
+          states={selectedSetupDetails.states!}
+          transitions={selectedSetupDetails.transitions || []}
+          initialStateID={selectedSetupDetails.initialStateID}
+        />
+      )}
+
+      {/* State Machine Setups List (when no specific setup selected) */}
+      {!selectedSetup && stateMachineSetups.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-slate-100">State Machine Setups</h2>
+          {stateMachineSetups.map(setup => (
+            <LiveStateMachine
+              key={setup.id}
+              setupId={setup.id}
+              setupName={setup.name}
+              states={setup.states!}
+              transitions={setup.transitions || []}
+              initialStateID={setup.initialStateID}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Live Charts */}
       {filteredReadings.length > 0 && (

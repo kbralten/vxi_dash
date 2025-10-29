@@ -52,3 +52,34 @@ export async function exportMonitoringCsv(id: number): Promise<Blob> {
   const response = await apiClient.get(`/dashboard/monitoring/${id}/export.csv`, { responseType: 'blob' });
   return response.data as Blob;
 }
+
+// State machine control endpoints
+export interface StateMachineStatus {
+  setup_id: number;
+  is_running: boolean;
+  current_state_id: string | null;
+  session_started_at: string | null;
+  state_entered_at: string | null;
+  time_in_current_state: number | null;
+  total_session_time: number | null;
+}
+
+export async function startStateMachine(setupId: number): Promise<{ message: string; status: StateMachineStatus }> {
+  const response = await apiClient.post<{ message: string; status: StateMachineStatus }>(`/state-machine/${setupId}/start`, {});
+  return response.data;
+}
+
+export async function stopStateMachine(setupId: number): Promise<{ message: string; setup_id: number }> {
+  const response = await apiClient.post<{ message: string; setup_id: number }>(`/state-machine/${setupId}/stop`, {});
+  return response.data;
+}
+
+export async function getStateMachineStatus(setupId: number): Promise<StateMachineStatus> {
+  const response = await apiClient.get<StateMachineStatus>(`/state-machine/${setupId}/status`);
+  return response.data;
+}
+
+export async function getAllStateMachineSessions(): Promise<StateMachineStatus[]> {
+  const response = await apiClient.get<StateMachineStatus[]>('/state-machine/');
+  return response.data;
+}

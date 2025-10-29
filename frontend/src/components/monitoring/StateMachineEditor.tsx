@@ -4,6 +4,7 @@ import type { State, Transition } from '../../types/monitoring';
 import type { Instrument } from '../../types/instrument';
 import { StateConfigurationPanel } from './StateConfigurationPanel';
 import { StateMachineCanvas } from './StateMachineCanvas';
+import { ValidationPanel } from './ValidationPanel';
 
 interface StateMachineEditorProps {
   states: State[];
@@ -128,6 +129,13 @@ export function StateMachineEditor({
           )}
         </div>
       </div>
+
+      {/* Validation Panel */}
+      <ValidationPanel 
+        states={states}
+        transitions={transitions}
+        initialStateID={initialStateID}
+      />
 
       {/* Canvas View */}
       {viewMode === 'canvas' && (

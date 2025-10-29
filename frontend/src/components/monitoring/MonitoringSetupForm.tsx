@@ -6,6 +6,7 @@ import type { Instrument } from '../../types/instrument';
 import type { MonitoringCreate, State, Transition } from '../../types/monitoring';
 import type { InstrumentConfiguration, Mode } from '../../types/instrumentConfig';
 import { StateMachineEditor } from './StateMachineEditor';
+import { validateStateMachine, formatValidationMessage } from '../../utils/stateMachineValidation';
 
 type FormState = {
   name: string;
@@ -62,6 +63,25 @@ export function MonitoringSetupForm(): ReactElement {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
+      // Validate state machine if enabled
+      if (form.useStateMachine) {
+        const validation = validateStateMachine(states, transitions, initialStateID);
+        
+        if (!validation.valid) {
+          const message = formatValidationMessage(validation);
+          setStatus(`State machine validation failed:\n\n${message}`);
+          return;
+        }
+
+        // Show warnings but allow proceeding
+        if (validation.warnings.length > 0) {
+          const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
+          if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to create anyway?`)) {
+            return;
+          }
+        }
+      }
+
       const seconds = form.frequency_seconds;
       const freqHz = seconds > 0 ? 1 / seconds : 0;
       const payload: MonitoringCreate = {
