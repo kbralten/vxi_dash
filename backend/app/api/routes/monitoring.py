@@ -3,6 +3,10 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, status
 
 from app.storage import get_storage
+from app.models.state_machine import (
+    normalize_state_machine_fields,
+    validate_state_machine_on_write,
+)
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -17,6 +21,8 @@ async def list_monitoring_configurations() -> List[Dict[str, Any]]:
     instruments_by_id = {inst["id"]: inst for inst in instruments}
 
     for setup in setups:
+        # Ensure state machine fields exist (non-breaking defaults)
+        normalize_state_machine_fields(setup)
         # Backward compatibility: single instrument fields
         instrument_id = setup.get("instrument_id")
         if instrument_id:
@@ -41,6 +47,12 @@ async def list_monitoring_configurations() -> List[Dict[str, Any]]:
 @router.post("/", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
 async def create_monitoring_configuration(payload: Dict[str, Any]) -> Dict[str, Any]:
     storage = get_storage()
+
+    # Validate and normalize state machine fields if present
+    try:
+        validate_state_machine_on_write(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     
     # Normalize payload to multi-instrument shape if single fields are used
     if "instruments" not in payload and "instrument_id" in payload:
@@ -67,7 +79,8 @@ async def create_monitoring_configuration(payload: Dict[str, Any]) -> Dict[str, 
             detail=f"Monitoring setup with name '{payload.get('name')}' already exists"
         )
 
-    setup = storage.create_monitoring_setup(payload)
+    # Ensure normalized fields are persisted
+    setup = storage.create_monitoring_setup(normalize_state_machine_fields(dict(payload)))
     
     # Enrich with instrument data (multi)
     instruments_by_id = {inst["id"]: inst for inst in storage.get_instruments()}
@@ -87,6 +100,9 @@ async def get_monitoring_configuration(setup_id: int) -> Dict[str, Any]:
     if setup is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Monitoring setup not found")
     
+    # Ensure state machine fields exist
+    normalize_state_machine_fields(setup)
+
     # Enrich with instrument data (single + multi)
     instrument_id = setup.get("instrument_id")
     if instrument_id:
@@ -131,7 +147,13 @@ async def update_monitoring_configuration(setup_id: int, payload: Dict[str, Any]
             if tid is None or storage.get_instrument(int(tid)) is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Instrument not found: {tid}")
     
-    setup = storage.update_monitoring_setup(setup_id, payload)
+    # Validate and normalize state machine fields if present
+    try:
+        validate_state_machine_on_write(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    setup = storage.update_monitoring_setup(setup_id, normalize_state_machine_fields(dict(payload)))
     if setup is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Monitoring setup not found")
     
