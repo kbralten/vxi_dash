@@ -9,7 +9,11 @@ import {
   getMonitoringStatus,
   resetMonitoringReadings,
 } from '../../services/monitoringService';
-import type { MonitoringSetup } from '../../types/monitoring';
+import { fetchInstruments } from '../../services/instrumentService';
+import type { MonitoringSetup, MonitoringUpdate, State, Transition } from '../../types/monitoring';
+import type { Instrument } from '../../types/instrument';
+import type { InstrumentConfiguration, Mode } from '../../types/instrumentConfig';
+import { StateMachineEditor } from './StateMachineEditor';
 
 export function MonitoringSetupList(): ReactElement {
   const [setups, setSetups] = useState<MonitoringSetup[]>([]);
@@ -17,9 +21,19 @@ export function MonitoringSetupList(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [statusById, setStatusById] = useState<Record<number, { running: boolean; last_success?: string | null; last_error?: string | null }>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<{ name: string; frequency_seconds: number }>({
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    frequency_seconds: number;
+    states: State[];
+    transitions: Transition[];
+    initialStateID?: string;
+  }>({
     name: '',
     frequency_seconds: 1,
+    states: [],
+    transitions: [],
+    initialStateID: undefined,
   });
 
   const loadSetups = async () => {
@@ -34,6 +48,7 @@ export function MonitoringSetupList(): ReactElement {
 
   useEffect(() => {
     loadSetups();
+    fetchInstruments().then(setInstruments).catch(console.error);
     let timer: number | undefined;
     const refreshHandler = () => {
       loadSetups();
@@ -86,6 +101,9 @@ export function MonitoringSetupList(): ReactElement {
       name: setup.name,
       // Convert stored frequency (Hz) to interval in seconds for editing
       frequency_seconds: setup.frequency_hz > 0 ? 1 / setup.frequency_hz : 0,
+      states: setup.states || [],
+      transitions: setup.transitions || [],
+      initialStateID: setup.initialStateID,
     });
   };
 
@@ -93,7 +111,19 @@ export function MonitoringSetupList(): ReactElement {
     try {
       // Convert interval seconds back to frequency_hz for the API
       const freqHz = editForm.frequency_seconds > 0 ? 1 / editForm.frequency_seconds : 0;
-      await updateMonitoringSetup(id, { name: editForm.name, frequency_hz: freqHz });
+      const updateData: MonitoringUpdate = {
+        name: editForm.name,
+        frequency_hz: freqHz,
+      };
+      
+      // Include state machine data if it exists
+      if (editForm.states.length > 0) {
+        updateData.states = editForm.states;
+        updateData.transitions = editForm.transitions;
+        updateData.initialStateID = editForm.initialStateID;
+      }
+      
+      await updateMonitoringSetup(id, updateData);
       setEditingId(null);
       loadSetups();
     } catch (err) {
@@ -169,37 +199,75 @@ export function MonitoringSetupList(): ReactElement {
       {setups.map((setup) => (
         <article key={setup.id} className="rounded border border-slate-800 bg-slate-900 p-4">
           {editingId === setup.id ? (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Name</label>
-                <input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
-                />
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+                <h3 className="text-lg font-semibold text-primary-light">Edit Monitoring Setup</h3>
+                <button
+                  onClick={() => setEditingId(null)}
+                  className="text-slate-400 hover:text-slate-200 text-2xl font-bold leading-none"
+                >
+                  ×
+                </button>
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Collection interval (seconds)</label>
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={editForm.frequency_seconds}
-                  onChange={(e) => setEditForm({ ...editForm, frequency_seconds: Number(e.target.value) })}
-                  className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
-                />
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm text-slate-300 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-300 mb-1">Collection interval (seconds)</label>
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={editForm.frequency_seconds}
+                    onChange={(e) => setEditForm({ ...editForm, frequency_seconds: Number(e.target.value) })}
+                    className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
               </div>
-              <div className="flex gap-2">
+
+              {/* State Machine Editor */}
+              {(editForm.states.length > 0 || setup.states) && (
+                <div className="border-t border-slate-700 pt-4">
+                  <StateMachineEditor
+                    states={editForm.states}
+                    transitions={editForm.transitions}
+                    initialStateID={editForm.initialStateID}
+                    instruments={instruments.filter((inst) => 
+                      setup.instruments?.some((t) => t.instrument_id === inst.id) ||
+                      setup.instrument_id === inst.id
+                    )}
+                    onChange={(newStates, newInitialStateID) => {
+                      setEditForm({ 
+                        ...editForm, 
+                        states: newStates, 
+                        initialStateID: newInitialStateID 
+                      });
+                    }}
+                    onTransitionsChange={(newTransitions) => {
+                      setEditForm({ ...editForm, transitions: newTransitions });
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-3 border-t border-slate-700">
                 <button
                   onClick={() => handleUpdate(setup.id)}
-                  className="rounded bg-primary-light px-3 py-1 text-sm font-medium text-slate-900 hover:bg-primary-dark hover:text-white"
+                  className="rounded bg-primary-light px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-primary"
                 >
-                  Save
+                  Save Changes
                 </button>
                 <button
                   onClick={() => setEditingId(null)}
-                  className="rounded bg-slate-700 px-3 py-1 text-sm font-medium text-slate-300 hover:bg-slate-600"
+                  className="rounded bg-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-600"
                 >
                   Cancel
                 </button>
@@ -229,6 +297,27 @@ export function MonitoringSetupList(): ReactElement {
                   </button>
                 </div>
               </header>
+              {setup.states && setup.states.length > 0 && (
+                <div className="mt-3 rounded border border-primary-light/30 bg-primary-dark/20 p-3">
+                  <div className="text-xs font-semibold text-primary-light mb-2">State Machine Enabled</div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <span className="text-slate-400">States:</span>
+                      <span className="ml-1 text-white font-medium">{setup.states.length}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Transitions:</span>
+                      <span className="ml-1 text-white font-medium">{setup.transitions?.length || 0}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Initial:</span>
+                      <span className="ml-1 text-white font-medium">
+                        {setup.states.find(s => s.id === setup.initialStateID)?.name || 'None'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
               {Array.isArray(setup.instruments) && setup.instruments.length > 0 ? (
                 <div className="mt-2 text-sm text-slate-300">
                   <div className="text-xs text-slate-400 mb-1">Targets:</div>

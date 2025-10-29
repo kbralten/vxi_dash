@@ -9,6 +9,38 @@ export interface MonitoringTarget extends MonitoringTargetBase {
   instrument?: Instrument | null;
 }
 
+// State Machine Types
+export interface StateInstrumentSettings {
+  [instrumentId: string]: {
+    modeId: string;
+    modeParams: Record<string, unknown>;
+  };
+}
+
+export interface State {
+  id: string;
+  name: string;
+  isEndState: boolean;
+  instrumentSettings: StateInstrumentSettings;
+}
+
+export interface Rule {
+  type: 'sensor' | 'timeInState' | 'totalTime';
+  // For sensor rules
+  signalName?: string;
+  operator?: '>' | '>=' | '<' | '<=' | '==' | '!=';
+  value?: number;
+  // For time rules
+  seconds?: number;
+}
+
+export interface Transition {
+  id: string;
+  sourceStateID: string;
+  targetStateID: string;
+  rules: Rule[];
+}
+
 export interface MonitoringBase {
   name: string;
   frequency_hz: number;
@@ -17,6 +49,10 @@ export interface MonitoringBase {
   // Backward-compatible single-instrument fields (may be omitted)
   instrument_id?: number;
   parameters?: Record<string, unknown>;
+  // State machine fields
+  initialStateID?: string;
+  states?: State[];
+  transitions?: Transition[];
 }
 
 export interface MonitoringSetup extends MonitoringBase {
