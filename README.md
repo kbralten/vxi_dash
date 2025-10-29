@@ -125,6 +125,55 @@ In the "Monitoring" section, create a new setup by giving it a name, setting a m
 
 Go to the "Dashboard" section and select your monitoring setup. You will see live charts and a control panel with **Start**, **Stop**, **Reset**, and **Download CSV** options.
 
+State Machine Workflow Automation
+--------------------------------
+
+The VXI-11 Instrument Dashboard is more than just a monitoring tool—it includes a powerful **state machine workflow engine** that transforms it into a configurable protocol execution platform. This feature allows users to define and automate complex workflows involving multiple instruments, states, and transitions.
+
+### Key Features
+
+- **Visual State Machine Designer**: Create workflows using a drag-and-drop interface with nodes (states) and arrows (transitions).
+- **State Configuration**: Define instrument settings for each state, including operational modes and parameters.
+- **Transition Rules**: Add conditions (e.g., sensor thresholds, time-based rules) to control when transitions occur.
+- **Real-Time Execution**: Watch workflows execute live with active state highlighting and animated transitions.
+
+### How It Works
+
+1. **Design Your Workflow**:
+   - Use the visual editor to add states and transitions.
+   - Configure each state with instrument settings.
+   - Add rules to transitions (e.g., "IF temperature > 75°C").
+
+2. **Start the Workflow**:
+   - Click "Start" to execute the workflow.
+   - The engine evaluates rules in real-time and transitions between states automatically.
+
+3. **Monitor Progress**:
+   - View the active state and live counters (e.g., time in state, total session time).
+   - Watch transitions animate as conditions are met.
+
+4. **End State**:
+   - Workflows stop automatically when reaching an end state.
+
+### Example Use Case: Temperature Cycling Test
+
+**Goal**: Heat an instrument to 80°C, hold for 30 seconds, cool to 40°C, and repeat 3 times.
+
+**Workflow**:
+- **States**:
+  - Idle (Initial State)
+  - Heating
+  - Holding
+  - Cooling
+  - Complete (End State)
+- **Transitions**:
+  - Idle → Heating: After 2 seconds
+  - Heating → Holding: IF temperature >= 80°C
+  - Holding → Cooling: After 30 seconds
+  - Cooling → Complete: IF temperature <= 40°C
+
+This feature enables precise, automated control of instrument workflows, making it ideal for scientific experiments, industrial processes, and automated testing.
+
 Poxying non-VXI instruments
 --------------------------
 
