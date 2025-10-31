@@ -27,6 +27,41 @@ jobs:
           # Build the image using the production Dockerfile located at repo root
           docker build -f Dockerfile.prod -t vxi_dash:prod .
 
+      - name: Run container for healthcheck
+        run: |
+          # Run container in background, expose port 8000
+          docker run -d --name vxi_dash_test -p 8000:8000 vxi_dash:prod
+
+      - name: Wait for health endpoint
+        run: |
+          set -e
+          HEALTH_URL="http://localhost:8000/api/health"
+          echo "Waiting for ${HEALTH_URL} to become available..."
+          ATTEMPTS=30
+          SLEEP=2
+          i=0
+          until curl --silent --show-error --fail "$HEALTH_URL" >/dev/null 2>&1; do
+            i=$((i+1))
+            if [ $i -ge $ATTEMPTS ]; then
+              echo "Health endpoint did not become available after $((ATTEMPTS * SLEEP))s"
+              # Print container logs for debugging
+              docker logs vxi_dash_test || true
+              exit 1
+            fi
+            echo "Attempt $i: not ready yet - sleeping ${SLEEP}s"
+            sleep $SLEEP
+          done
+          echo "Health endpoint is available"
+
+      - name: Run health check
+        run: |
+          curl --silent --show-error --fail http://localhost:8000/api/health
+
+      - name: Stop and remove test container
+        if: always()
+        run: |
+          docker rm -f vxi_dash_test || true
+
       - name: Save image to tar
         run: |
           docker save vxi_dash:prod -o vxi_dash_prod.tar
