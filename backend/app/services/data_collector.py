@@ -177,6 +177,19 @@ class DataCollector:
         key = f"{setup_id}:{instrument.get('id')}"
         if self._enabled_modes.get(key) == (mode.get("id") or mode.get("name") or ""):
             return
+        
+        # Check if state machine is running - if so, skip auto-enable
+        # The state machine manages instrument settings itself
+        try:
+            from app.services.state_machine_engine import get_state_machine_engine
+            engine = get_state_machine_engine()
+            status = engine.get_session_status(setup_id)
+            if status and status.get("is_running"):
+                print(f"[DataCollector] Skipping auto-enable for setup {setup_id} - state machine is running")
+                return
+        except Exception:
+            pass
+        
         address = instrument.get("address", "")
         client = await get_vxi11_client(address)
         enable_cmds = self._expand_commands(mode.get("enableCommands", ""), params.get("modeParams", params))
