@@ -17,7 +17,9 @@ COPY frontend/postcss.config.js ./
 COPY frontend/index.html ./
 
 # Install dependencies (include dev deps so we can run the build step)
-RUN npm ci
+# Use `npm install` here because `npm ci` requires a package-lock.json to be present
+# and this repo may not always include a lockfile or it may be intentionally regenerated.
+RUN npm install
 
 # Copy source files
 COPY frontend/src ./src
