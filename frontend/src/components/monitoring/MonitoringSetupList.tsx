@@ -384,7 +384,7 @@ export function MonitoringSetupList(): ReactElement {
                   </button>
                 </div>
               </header>
-              {setup.states && setup.states.length > 0 && (
+              {setup.states && setup.states.length > 1 && (
                 <div className="mt-3 rounded border border-primary-light/30 bg-primary-dark/20 p-3">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-xs font-semibold text-primary-light">State Machine Enabled</div>
@@ -433,12 +433,40 @@ export function MonitoringSetupList(): ReactElement {
                 <div className="mt-2 text-sm text-slate-300">
                   <div className="text-xs text-slate-400 mb-1">Targets:</div>
                   <ul className="list-disc pl-5 space-y-1">
-                    {setup.instruments.map((t, i) => (
-                      <li key={i}>
-                        {t.instrument?.name ?? `#${t.instrument_id}`} – Mode:{' '}
-                        {String((t.parameters as any)?.modeName || (t.parameters as any)?.modeId || '—')}
-                      </li>
-                    ))}
+                    {setup.instruments.map((t, i) => {
+                      // Get mode from initial state's instrument settings (support numeric and string keys)
+                      const initialState = setup.states?.find(s => s.id === setup.initialStateID);
+                      const instKeyNum = t.instrument_id;
+                      const instKeyStr = String(t.instrument_id);
+                      const instrumentSettings = initialState?.instrumentSettings?.[instKeyNum] ?? initialState?.instrumentSettings?.[instKeyStr];
+
+                      let modeName: string = '—';
+                      const modeId = instrumentSettings?.modeId || instrumentSettings?.mode || instrumentSettings?.modeName;
+
+                      if (instrumentSettings?.modeName) {
+                        modeName = instrumentSettings.modeName;
+                      } else if (modeId) {
+                        // If we only have an id, try to map to a human-friendly name from the instrument config
+                        const desc = t.instrument?.description;
+                        if (desc) {
+                          try {
+                            const cfg = JSON.parse(desc as string) as { modes?: Array<{ id?: string; name?: string }> };
+                            const found = cfg.modes?.find((m) => m.id === modeId || m.name === modeId);
+                            modeName = found?.name ?? String(modeId);
+                          } catch (e) {
+                            modeName = String(modeId);
+                          }
+                        } else {
+                          modeName = String(modeId);
+                        }
+                      }
+
+                      return (
+                        <li key={i}>
+                          {t.instrument?.name ?? `#${t.instrument_id}`} – Mode: {String(modeName)}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ) : (
@@ -446,11 +474,39 @@ export function MonitoringSetupList(): ReactElement {
                   <p className="mt-1 text-sm text-slate-300">
                     Instrument: {setup.instrument?.name ?? `#${setup.instrument_id}`}
                   </p>
-                  {(setup as any).parameters && (
-                    <p className="mt-1 text-xs text-slate-400">
-                      Mode: {String((setup as any).parameters?.modeName || (setup as any).parameters?.modeId || '—')}
-                    </p>
-                  )}
+                  {(() => {
+                    // Get mode from initial state's instrument settings for single instrument
+                    const initialState = setup.states?.find(s => s.id === setup.initialStateID);
+                    const instKeyNum = setup.instrument_id;
+                    const instKeyStr = String(setup.instrument_id);
+                    const instrumentSettings = initialState?.instrumentSettings?.[instKeyNum] ?? initialState?.instrumentSettings?.[instKeyStr];
+
+                    let modeName: string = '—';
+                    const modeId = instrumentSettings?.modeId || instrumentSettings?.mode || instrumentSettings?.modeName;
+
+                    if (instrumentSettings?.modeName) {
+                      modeName = instrumentSettings.modeName;
+                    } else if (modeId) {
+                      const desc = setup.instrument?.description;
+                      if (desc) {
+                        try {
+                          const cfg = JSON.parse(desc as string) as { modes?: Array<{ id?: string; name?: string }> };
+                          const found = cfg.modes?.find((m) => m.id === modeId || m.name === modeId);
+                          modeName = found?.name ?? String(modeId);
+                        } catch (e) {
+                          modeName = String(modeId);
+                        }
+                      } else {
+                        modeName = String(modeId);
+                      }
+                    }
+
+                    return (
+                      <p className="mt-1 text-xs text-slate-400">
+                        Mode: {String(modeName)}
+                      </p>
+                    );
+                  })()}
                 </>
               )}
               <div className="mt-2 flex items-center justify-between">

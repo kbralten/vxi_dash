@@ -97,15 +97,18 @@ export function validateStateMachine(
   });
 
   // Check 8: Find dead-end states (non-end states with no outgoing transitions)
-  const deadEndStates = findDeadEndStates(states, transitions);
-  deadEndStates.forEach(state => {
-    warnings.push({
-      severity: 'warning',
-      message: `State "${state.name}" has no outgoing transitions and is not marked as End State. Workflow will get stuck here.`,
-      stateId: state.id,
-      stateName: state.name,
+  // Skip this check for single-state machines as they're effectively basic monitoring
+  if (states.length > 1) {
+    const deadEndStates = findDeadEndStates(states, transitions);
+    deadEndStates.forEach(state => {
+      warnings.push({
+        severity: 'warning',
+        message: `State "${state.name}" has no outgoing transitions and is not marked as End State. Workflow will get stuck here.`,
+        stateId: state.id,
+        stateName: state.name,
+      });
     });
-  });
+  }
 
   // Check 9: Validate transition rules
   transitions.forEach((transition, index) => {
@@ -168,12 +171,15 @@ export function validateStateMachine(
   });
 
   // Check 10: Warn if no end states exist
-  const endStates = states.filter(s => s.isEndState);
-  if (endStates.length === 0) {
-    warnings.push({
-      severity: 'warning',
-      message: 'No end states defined. State machine will run indefinitely until manually stopped.',
-    });
+  // Skip this check for single-state machines as they're effectively basic monitoring
+  if (states.length > 1) {
+    const endStates = states.filter(s => s.isEndState);
+    if (endStates.length === 0) {
+      warnings.push({
+        severity: 'warning',
+        message: 'No end states defined. State machine will run indefinitely until manually stopped.',
+      });
+    }
   }
 
   // Check 11: Validate instrument settings (skip for end states)

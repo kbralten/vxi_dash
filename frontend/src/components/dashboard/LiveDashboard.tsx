@@ -59,9 +59,9 @@ export function LiveDashboard(): ReactElement {
     ? readings.filter(r => r.setup_id === selectedSetup)
     : readings;
 
-  // Get state machine setups (setups with states defined)
+  // Get state machine setups (only show multi-state machines)
   const stateMachineSetups = monitoringSetups.filter(
-    setup => setup.states && setup.states.length > 0
+    setup => setup.states && setup.states.length > 1
   );
 
   // Get the selected setup details if it has a state machine
@@ -70,7 +70,7 @@ export function LiveDashboard(): ReactElement {
     : null;
   const showStateMachine = selectedSetupDetails && 
     selectedSetupDetails.states && 
-    selectedSetupDetails.states.length > 0;
+    selectedSetupDetails.states.length > 1; // Only show for multi-state machines
 
   return (
     <div className="space-y-6">
