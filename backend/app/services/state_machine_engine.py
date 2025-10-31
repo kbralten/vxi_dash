@@ -35,6 +35,9 @@ class StateMachineSession:
         self.states_by_id: Dict[str, State] = {}
         self.transitions: List[Transition] = []
         self.instruments_by_id: Dict[int, Dict[str, Any]] = {}
+        
+        # VXI-11 client pool: reuse connections across state transitions
+        self._client_cache: Dict[str, Any] = {}
 
     def _load_setup(self) -> bool:
         """Load and cache the monitoring setup and its state machine definition."""
@@ -70,6 +73,16 @@ class StateMachineSession:
             return False
         return state.get("isEndState", False)
 
+    async def _get_or_create_client(self, address: str) -> Any:
+        """Get a cached VXI-11 client for an address, or create one if needed.
+        
+        This ensures we reuse the same client (and VXI-11 link) across multiple
+        state transitions, avoiding repeated link creation overhead.
+        """
+        if address not in self._client_cache:
+            self._client_cache[address] = await get_vxi11_client(address)
+        return self._client_cache[address]
+    
     async def _apply_state_settings(self, state_id: str) -> None:
         """Apply instrument settings defined in a state.
         
@@ -110,9 +123,9 @@ class StateMachineSession:
             if not isinstance(mode_params, dict):
                 mode_params = {}
             
-            # Execute enable commands for this mode
+            # Get or create cached client for this instrument
             address = instrument.get("address", "")
-            client = await get_vxi11_client(address)
+            client = await self._get_or_create_client(address)
             
             enable_cmds = self._expand_commands(
                 mode.get("enableCommands", ""), 
@@ -272,13 +285,19 @@ class StateMachineSession:
         self.current_state_id = state_id
         self.state_entered_at = datetime.utcnow()
         
-        # Apply instrument settings for new state
-        await self._apply_state_settings(state_id)
-        
         # Check if this is an end state
         if self._is_end_state(state_id):
             print(f"[StateMachine {self.setup_id}] Reached end state, stopping")
+            # Record the final end state
+            state = self.states_by_id.get(state_id)
+            if state:
+                state_name = state.get("name", state_id)
+                self.data_collector.record_end_state(self.setup_id, state_id, state_name)
             await self.stop()
+            return
+        
+        # Apply instrument settings for new state (only if not an end state)
+        await self._apply_state_settings(state_id)
 
     async def _tick(self) -> None:
         """Execute one state machine evaluation cycle."""
@@ -362,6 +381,9 @@ class StateMachineSession:
         
         # Disable instruments
         await self.data_collector.disable_mode_for_setup(self.setup_id)
+        
+        # Clear client cache to release VXI-11 connections
+        self._client_cache.clear()
         
         print(f"[StateMachine {self.setup_id}] Stopped")
 

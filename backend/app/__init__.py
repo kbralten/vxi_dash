@@ -1,8 +1,13 @@
 """Application package for the VXI-11 dashboard backend."""
 
 import sys
-import xdrlib  # This is the replacement for xdrlib
 
-# Inject py_xdrlib into sys.modules so vxi11 can use it
-sys.modules['xdrlib'] = xdrlib
+# Python 3.13 removed xdrlib from the standard library.
+# python-vxi11 depends on it, so we use our vendored copy from Python 3.12.
+# Inject it into sys.modules before any imports of vxi11.
+try:
+    import xdrlib  # type: ignore
+except ModuleNotFoundError:
+    from app.vendor import xdrlib
+    sys.modules['xdrlib'] = xdrlib
 

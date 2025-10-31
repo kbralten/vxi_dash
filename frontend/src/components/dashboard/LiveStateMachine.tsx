@@ -9,7 +9,7 @@ import ReactFlow, {
   Position,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { getStateMachineStatus, type StateMachineStatus } from '../../services/monitoringService';
+import { getStateMachineStatus, getLastEndState, type StateMachineStatus, type LastEndState } from '../../services/monitoringService';
 import type { State, Transition } from '../../types/monitoring';
 
 interface LiveStateMachineProps {
@@ -28,6 +28,7 @@ export function LiveStateMachine({
   initialStateID 
 }: LiveStateMachineProps): ReactElement {
   const [smStatus, setSmStatus] = useState<StateMachineStatus | null>(null);
+  const [lastEndState, setLastEndState] = useState<LastEndState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,6 +41,14 @@ export function LiveStateMachine({
         if (mounted) {
           setSmStatus(status);
           setError(null);
+          
+          // If not running, fetch the last end state to highlight it
+          if (!status.is_running) {
+            const endState = await getLastEndState(setupId);
+            setLastEndState(endState);
+          } else {
+            setLastEndState(null);
+          }
         }
       } catch (err) {
         if (mounted) {
@@ -63,6 +72,7 @@ export function LiveStateMachine({
   // Convert states to React Flow nodes
   const nodes: Node[] = states.map((state, index) => {
     const isActive = smStatus?.is_running && smStatus?.current_state_id === state.id;
+    const isReachedEndState = !smStatus?.is_running && lastEndState?.state_id === state.id;
     const isInitial = state.id === initialStateID;
     const isEnd = state.isEndState;
 
@@ -80,6 +90,9 @@ export function LiveStateMachine({
             {isEnd && (
               <div className="text-xs text-red-400 mt-1">End</div>
             )}
+            {isReachedEndState && (
+              <div className="text-xs text-amber-400 mt-1 font-medium">Reached</div>
+            )}
             {isActive && smStatus?.time_in_current_state !== null && (
               <div className="text-xs text-primary-light mt-1 font-medium">
                 {smStatus.time_in_current_state.toFixed(1)}s
@@ -91,13 +104,17 @@ export function LiveStateMachine({
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
       style: {
-        background: isActive ? '#06b6d4' : isEnd ? '#ef4444' : isInitial ? '#10b981' : '#334155',
-        color: isActive ? '#0f172a' : '#fff',
-        border: isActive ? '3px solid #0891b2' : '2px solid #475569',
+        background: isActive ? '#06b6d4' : isReachedEndState ? '#f59e0b' : isEnd ? '#ef4444' : isInitial ? '#10b981' : '#334155',
+        color: isActive || isReachedEndState ? '#0f172a' : '#fff',
+        border: isActive ? '3px solid #0891b2' : isReachedEndState ? '3px solid #d97706' : '2px solid #475569',
         borderRadius: '8px',
         padding: '12px 16px',
         minWidth: '140px',
-        boxShadow: isActive ? '0 0 20px rgba(6, 182, 212, 0.6), 0 0 40px rgba(6, 182, 212, 0.3)' : 'none',
+        boxShadow: isActive 
+          ? '0 0 20px rgba(6, 182, 212, 0.6), 0 0 40px rgba(6, 182, 212, 0.3)' 
+          : isReachedEndState 
+          ? '0 0 20px rgba(245, 158, 11, 0.6), 0 0 40px rgba(245, 158, 11, 0.3)' 
+          : 'none',
         transition: 'all 0.3s ease',
       },
     };
@@ -207,6 +224,9 @@ export function LiveStateMachine({
               if (smStatus?.is_running && smStatus?.current_state_id === node.id) {
                 return '#06b6d4';
               }
+              if (!smStatus?.is_running && lastEndState?.state_id === node.id) {
+                return '#f59e0b';
+              }
               const state = states.find(s => s.id === node.id);
               if (state?.isEndState) return '#ef4444';
               if (state?.id === initialStateID) return '#10b981';
@@ -223,6 +243,10 @@ export function LiveStateMachine({
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded bg-cyan-500 border-2 border-cyan-600"></div>
           <span className="text-slate-300">Active State</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-amber-500 border-2 border-amber-600"></div>
+          <span className="text-slate-300">Reached End State</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded bg-green-500 border-2 border-slate-600"></div>

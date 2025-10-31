@@ -112,47 +112,60 @@ export function MonitoringSetupList(): ReactElement {
   }, []);
 
   const handleDelete = async (id: number, name: string) => {
+    console.log('[DEBUG] Delete button clicked for:', id, name);
     if (!confirm(`Are you sure you want to delete monitoring setup "${name}"?`)) {
+      console.log('[DEBUG] Delete cancelled by user');
       return;
     }
+    console.log('[DEBUG] Delete confirmed, calling API...');
     try {
       await deleteMonitoringSetup(id);
+      console.log('[DEBUG] Delete successful, reloading setups...');
       loadSetups();
     } catch (err) {
+      console.error('[DEBUG] Delete failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete monitoring setup');
     }
   };
 
   const handleEdit = (setup: MonitoringSetup) => {
     setEditingId(setup.id);
+    
+    // If setup has no states (legacy setup), initialize with default "Initial State"
+    const hasStates = setup.states && setup.states.length > 0;
+    const defaultStates: State[] = hasStates ? [] : [{
+      id: 'state_1',
+      name: 'Initial State',
+      isEndState: false,
+      instrumentSettings: {},
+    }];
+    
     setEditForm({
       name: setup.name,
       // Convert stored frequency (Hz) to interval in seconds for editing
       frequency_seconds: setup.frequency_hz > 0 ? 1 / setup.frequency_hz : 0,
-      states: setup.states || [],
+      states: hasStates ? setup.states! : defaultStates,
       transitions: setup.transitions || [],
-      initialStateID: setup.initialStateID,
+      initialStateID: hasStates ? setup.initialStateID : 'state_1',
     });
   };
 
   const handleUpdate = async (id: number) => {
     try {
-      // Validate state machine if states are defined
-      if (editForm.states.length > 0) {
-        const validation = validateStateMachine(editForm.states, editForm.transitions, editForm.initialStateID);
-        
-        if (!validation.valid) {
-          const message = formatValidationMessage(validation);
-          setError(`State machine validation failed:\n\n${message}`);
-          return;
-        }
+      // Validate state machine (always required now)
+      const validation = validateStateMachine(editForm.states, editForm.transitions, editForm.initialStateID);
+      
+      if (!validation.valid) {
+        const message = formatValidationMessage(validation);
+        setError(`State machine validation failed:\n\n${message}`);
+        return;
+      }
 
-        // Show warnings but allow proceeding
-        if (validation.warnings.length > 0) {
-          const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
-          if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to save anyway?`)) {
-            return;
-          }
+      // Show warnings but allow proceeding
+      if (validation.warnings.length > 0) {
+        const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
+        if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to save anyway?`)) {
+          return;
         }
       }
 
@@ -161,14 +174,11 @@ export function MonitoringSetupList(): ReactElement {
       const updateData: MonitoringUpdate = {
         name: editForm.name,
         frequency_hz: freqHz,
+        // Always include state machine data
+        states: editForm.states,
+        transitions: editForm.transitions,
+        initialStateID: editForm.initialStateID,
       };
-      
-      // Include state machine data if it exists
-      if (editForm.states.length > 0) {
-        updateData.states = editForm.states;
-        updateData.transitions = editForm.transitions;
-        updateData.initialStateID = editForm.initialStateID;
-      }
       
       await updateMonitoringSetup(id, updateData);
       setEditingId(null);
@@ -400,7 +410,7 @@ export function MonitoringSetupList(): ReactElement {
                   <div className="grid grid-cols-3 gap-2 text-xs mb-2">
                     <div>
                       <span className="text-slate-400">States:</span>
-                      <span className="ml-1 text-white font-medium">{setup.states.length}</span>
+                      <span className="ml-1 text-white font-medium">{setup.states?.length || 0}</span>
                     </div>
                     <div>
                       <span className="text-slate-400">Transitions:</span>
@@ -409,7 +419,7 @@ export function MonitoringSetupList(): ReactElement {
                     <div>
                       <span className="text-slate-400">Initial:</span>
                       <span className="ml-1 text-white font-medium">
-                        {setup.states.find(s => s.id === setup.initialStateID)?.name || 'None'}
+                        {setup.states?.find(s => s.id === setup.initialStateID)?.name || 'None'}
                       </span>
                     </div>
                   </div>
@@ -418,7 +428,7 @@ export function MonitoringSetupList(): ReactElement {
                       <div className="text-xs">
                         <span className="text-slate-400">Current State:</span>
                         <span className="ml-1 text-primary-light font-semibold">
-                          {setup.states.find(s => s.id === smStatusById[setup.id].current_state_id)?.name || smStatusById[setup.id].current_state_id}
+                          {setup.states?.find(s => s.id === smStatusById[setup.id].current_state_id)?.name || smStatusById[setup.id].current_state_id}
                         </span>
                       </div>
                       {smStatusById[setup.id]?.time_in_current_state !== null && (

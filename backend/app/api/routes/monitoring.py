@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, status
 
 from app.storage import get_storage
+from app.services.data_collector import get_data_collector
 from app.models.state_machine import (
     normalize_state_machine_fields,
     validate_state_machine_on_write,
@@ -176,3 +177,7 @@ async def delete_monitoring_configuration(setup_id: int) -> None:
     storage = get_storage()
     if not storage.delete_monitoring_setup(setup_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Monitoring setup not found")
+    
+    # Delete all monitoring data for this setup
+    collector = get_data_collector()
+    collector.reset_readings_for_setup(setup_id)

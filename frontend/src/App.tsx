@@ -63,7 +63,7 @@ export default function App(): ReactElement {
         {view === 'dashboard' && <DashboardView />}
         {view === 'instruments' && <InstrumentList />}
         {view === 'monitoring' && (
-          <div className="grid gap-8 md:grid-cols-[1.5fr_1fr]">
+          <div className="space-y-8">
             <MonitoringSetupList />
             <MonitoringSetupForm />
           </div>

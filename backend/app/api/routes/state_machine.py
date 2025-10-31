@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, status
 
 from app.services.state_machine_engine import get_state_machine_engine
+from app.services.data_collector import get_data_collector
 
 router = APIRouter(prefix="/state-machine", tags=["state-machine"])
 
@@ -86,3 +87,26 @@ async def list_all_sessions() -> List[Dict[str, Any]]:
     """Get status of all active state machine sessions."""
     engine = get_state_machine_engine()
     return engine.get_all_sessions_status()
+
+
+@router.get("/{setup_id}/last-end-state", response_model=Optional[Dict[str, Any]])
+async def get_last_end_state(setup_id: int) -> Optional[Dict[str, Any]]:
+    """Get the last end state reached by this setup from logged data.
+    
+    Returns the state_machine info from the most recent reading with is_end_state=True,
+    or None if no end state has been reached yet.
+    """
+    collector = get_data_collector()
+    readings = collector.get_all_readings_for_setup(setup_id)
+    
+    # Search backwards for the most recent end state record
+    for reading in reversed(readings):
+        state_machine_info = reading.get("state_machine")
+        if state_machine_info and state_machine_info.get("is_end_state"):
+            return {
+                "state_id": state_machine_info.get("current_state_id"),
+                "state_name": state_machine_info.get("state_name"),
+                "timestamp": reading.get("timestamp"),
+            }
+    
+    return None

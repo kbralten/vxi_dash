@@ -3,10 +3,13 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from app.services.vxi11_client import get_vxi11_client
 from app.storage import get_storage
+
+if TYPE_CHECKING:
+    from app.services.state_machine_engine import StateMachineEngine
 
 
 class DataCollector:
@@ -329,6 +332,8 @@ class DataCollector:
                         "mode": mode,
                         "readings": readings,
                     }
+                    # Add state machine info if available
+                    self._add_state_machine_info(reading, setup_id)
                     self._save_reading(reading)
                     last_reading = reading
                 # Update last status after processing all
@@ -391,6 +396,8 @@ class DataCollector:
                 "mode": mode,
                 "readings": readings,
             }
+            # Add state machine info if available
+            self._add_state_machine_info(reading, setup_id)
             self._save_reading(reading)
             self._last_status[setup_id] = {"last_success": reading["timestamp"], "last_error": None}
             return reading
@@ -491,6 +498,44 @@ class DataCollector:
         running = setup_id in self._tasks and not self._tasks[setup_id].cancelled()
         status = self._last_status.get(setup_id, {})
         return {"running": running, **status}
+
+    def _add_state_machine_info(self, reading: Dict[str, Any], setup_id: int) -> None:
+        """Add current state machine state to a reading if available."""
+        try:
+            # Avoid circular import by importing here
+            from app.services.state_machine_engine import get_state_machine_engine
+            engine = get_state_machine_engine()
+            status = engine.get_session_status(setup_id)
+            if status and status.get("is_running"):
+                state_info = {
+                    "current_state_id": status.get("current_state_id"),
+                    "time_in_state": status.get("time_in_current_state"),
+                    "session_time": status.get("total_session_time"),
+                }
+                reading["state_machine"] = state_info
+        except Exception:
+            # If state machine engine not available or other error, just skip
+            pass
+
+    def record_end_state(self, setup_id: int, state_id: str, state_name: str) -> None:
+        """Record a final reading when state machine reaches an end state."""
+        storage = get_storage()
+        setup = storage.get_monitoring_setup(setup_id)
+        if not setup:
+            return
+        
+        reading = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "setup_id": setup_id,
+            "setup_name": setup["name"],
+            "readings": {},
+            "state_machine": {
+                "current_state_id": state_id,
+                "state_name": state_name,
+                "is_end_state": True,
+            },
+        }
+        self._save_reading(reading)
 
     def reset_readings_for_setup(self, setup_id: int) -> int:
         """Remove readings for a specific setup. Returns number removed."""

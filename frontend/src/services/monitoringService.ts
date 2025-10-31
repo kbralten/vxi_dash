@@ -83,3 +83,14 @@ export async function getAllStateMachineSessions(): Promise<StateMachineStatus[]
   const response = await apiClient.get<StateMachineStatus[]>('/state-machine/');
   return response.data;
 }
+
+export interface LastEndState {
+  state_id: string;
+  state_name: string;
+  timestamp: string;
+}
+
+export async function getLastEndState(setupId: number): Promise<LastEndState | null> {
+  const response = await apiClient.get<LastEndState | null>(`/state-machine/${setupId}/last-end-state`);
+  return response.data;
+}

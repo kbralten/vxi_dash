@@ -176,8 +176,13 @@ export function validateStateMachine(
     });
   }
 
-  // Check 11: Validate instrument settings
+  // Check 11: Validate instrument settings (skip for end states)
   states.forEach(state => {
+    // End states don't need instrument settings - they just stop execution
+    if (state.isEndState) {
+      return;
+    }
+    
     if (!state.instrumentSettings || Object.keys(state.instrumentSettings).length === 0) {
       warnings.push({
         severity: 'warning',
