@@ -49,13 +49,7 @@ export function MonitoringSetupForm(): ReactElement {
         return;
       }
 
-      // Show warnings but allow proceeding
-      if (validation.warnings.length > 0) {
-        const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
-        if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to create anyway?`)) {
-          return;
-        }
-      }
+      // Warnings are informational only - no need to prompt
 
       const seconds = form.frequency_seconds;
       const freqHz = seconds > 0 ? 1 / seconds : 0;

@@ -161,13 +161,7 @@ export function MonitoringSetupList(): ReactElement {
         return;
       }
 
-      // Show warnings but allow proceeding
-      if (validation.warnings.length > 0) {
-        const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
-        if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to save anyway?`)) {
-          return;
-        }
-      }
+      // Warnings are informational only - no need to prompt
 
       // Convert interval seconds back to frequency_hz for the API
       const freqHz = editForm.frequency_seconds > 0 ? 1 / editForm.frequency_seconds : 0;
@@ -238,13 +232,7 @@ export function MonitoringSetupList(): ReactElement {
           return;
         }
 
-        // Show warnings but allow proceeding
-        if (validation.warnings.length > 0) {
-          const message = formatValidationMessage({ valid: true, errors: [], warnings: validation.warnings });
-          if (!confirm(`State machine has warnings:\n\n${message}\n\nDo you want to start anyway?`)) {
-            return;
-          }
-        }
+        // Warnings are informational only - no need to prompt
       }
 
       await startStateMachine(id);
