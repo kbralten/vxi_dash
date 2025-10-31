@@ -1,0 +1,76 @@
+# Multi-stage production Dockerfile for vxi_dash
+# Builds frontend and backend into a single optimized container
+
+# ============================================
+# Stage 1: Build frontend
+# ============================================
+FROM node:18-alpine AS frontend-builder
+
+WORKDIR /frontend
+
+# Copy package files first for better caching
+COPY frontend/package*.json ./
+COPY frontend/tsconfig*.json ./
+COPY frontend/vite.config.ts ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/postcss.config.js ./
+COPY frontend/index.html ./
+
+# Install dependencies (include dev deps so we can run the build step)
+RUN npm ci
+
+# Copy source files
+COPY frontend/src ./src
+COPY frontend/vite-env.d.ts ./
+
+# Build the frontend
+RUN npm run build
+
+# ============================================
+# Stage 2: Build backend with frontend assets
+# ============================================
+FROM python:3.11-slim
+
+# Set environment variables
+ENV POETRY_VERSION=1.7.1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies and Poetry
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        && \
+    pip install --no-cache-dir "poetry==${POETRY_VERSION}" && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy backend dependency files
+COPY backend/pyproject.toml backend/poetry.lock* ./
+
+# Install Python dependencies (production only)
+RUN poetry install --no-root --no-interaction --no-ansi --only main
+
+# Copy backend source
+COPY backend/app ./app
+COPY backend/data ./data
+
+# Copy frontend build from stage 1
+COPY --from=frontend-builder /frontend/dist ./static
+
+# Create data directory for runtime persistence
+RUN mkdir -p /app/data
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()" || exit 1
+
+# Run the application
+CMD ["poetry", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

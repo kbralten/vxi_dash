@@ -1,3 +1,127 @@
+```markdown
+VXI-11 Instrument Dashboard & Data Logger
+=========================================
+
+Overview
+--------
+
+Welcome to the VXI-11 Instrument Dashboard & Data Logger! This program provides a UI and backend services to configure, monitor, and log data from instruments that support the VXI-11 (LXI) protocol.
+
+This README contains both development and production build instructions so you can run the full stack locally or produce a single production container that serves both API and frontend assets.
+
+Project structure
+-----------------
+
+- `backend/` – FastAPI application (Poetry-managed) that exposes the VXI-11 API and background services.
+- `frontend/` – React + Vite UI using TypeScript and TailwindCSS.
+- `data/` – JSON persistence for instruments, monitoring setups, and readings.
+- `scripts/` – helper scripts (includes `scripts/build_frontend.sh`).
+
+Quick dev setup
+---------------
+
+Backend (FastAPI + Poetry)
+
+1.  `cd backend`
+2.  `poetry install`
+3.  `cp .env.example .env` (edit values if needed)
+4.  `poetry run uvicorn app.main:app --reload`
+
+Frontend (React + Vite)
+
+1.  `cd frontend`
+2.  `npm install`
+3.  `npm run dev` (dev server with HMR on http://localhost:5173)
+
+Full-stack dev via docker-compose
+--------------------------------
+
+This is useful for development (backend + Vite dev server + optional mock instrument):
+
+```bash
+# from project root
+docker compose up --build
+
+# frontend: http://localhost:5173
+# backend API: http://localhost:8000/api
+```
+
+Production build & deployment (single artifact)
+----------------------------------------------
+
+For production we build the frontend, copy it into `backend/static`, and run a single FastAPI app that serves both the API and the static SPA. Two supported ways to produce/run the production artifact are shown below.
+
+1) Build locally and run backend (quick smoke test)
+
+```bash
+# from project root
+./scripts/build_frontend.sh   # builds frontend and copies to backend/static
+
+cd backend
+poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# open http://localhost:8000
+```
+
+What the script does
+
+- Runs `npm install` and `npm run build` inside `frontend/`.
+- Copies `frontend/dist` to `backend/static` (backend serves these files).
+
+2) Build the production Docker image
+
+The repository includes a multi-stage `Dockerfile.prod` that builds the frontend and installs backend dependencies to generate a single optimized image.
+
+```bash
+# from project root
+docker build -f Dockerfile.prod -t vxi-dash:prod .
+
+# run the container (persisting data directory)
+docker run -p 8000:8000 \
+  -v $(pwd)/backend/data:/app/data \
+  -e VXI11_ENABLE_MOCK=false \
+  vxi-dash:prod
+
+# open http://localhost:8000
+```
+
+Notes and runtime flags
+-----------------------
+
+- `VXI11_ENABLE_MOCK` — set `true` to use the included mock clients for instrumentation (useful for testing without real instruments).
+- `VXI11_AUTO_UNLOCK` — controls auto-unlock behavior for RPC client operations (default behavior in dev can differ).
+- `VITE_API_URL` — not required in production since frontend is served from the same origin as the API.
+- Persist `backend/data` as a volume when running the container if you want readings and configurations to survive container restarts.
+
+Healthcheck
+-----------
+
+The production image includes a healthcheck that probes `/api/health`. Use your container runtime to inspect the container health status.
+
+Troubleshooting
+---------------
+
+- If the UI shows JSON instead of the app, the frontend build was not copied to `backend/static/index.html`. Run `./scripts/build_frontend.sh` and restart the backend.
+- If `docker build` fails while installing Python deps, ensure network access and that `pyproject.toml` / `poetry.lock` are consistent. You can also build the frontend and test the backend locally first to isolate the issue.
+
+Testing & tooling
+-----------------
+
+- Backend tests: `cd backend && poetry run pytest`
+- Frontend tests: `cd frontend && npm run test`
+- Linters/formatters: `poetry run ruff check .`, `poetry run black .`, `cd frontend && npm run lint`
+
+Contributing
+------------
+
+Contributions are welcome! Please open an issue or submit a pull request to discuss changes.
+
+License
+-------
+
+This project is licensed under the AGPL. See the `LICENSE` file for details.
+
+``` 
 VXI-11 Instrument Dashboard & Data Logger
 =========================================
 

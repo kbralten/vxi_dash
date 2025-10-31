@@ -1,0 +1,71 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# Development files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Backend development
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.env
+backend/.env.local
+backend/venv/
+backend/.venv/
+backend/poetry.lock
+
+# Frontend development
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Docker files (exclude from build context)
+docker-compose.yml
+Dockerfile
+frontend/Dockerfile
+backend/Dockerfile
+
+# Scripts (development only)
+scripts/dev.ps1
+run_services.sh
+
+# CI/CD
+.github/
+
+# Logs
+*.log
+logs/
+
+# Data files (should be mounted as volume)
+data/*.json
+
+# Build artifacts
+backend/static/
+
+# Tests
+backend/tests/
+frontend/src/**/*.test.ts
+frontend/src/**/*.test.tsx
+frontend/src/setupTests.ts
+
+# IDE and editor configs
+*.swp
+*.swo
+*~
+.eslintrc.cjs
+.prettierrc
