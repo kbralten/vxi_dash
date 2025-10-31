@@ -5,6 +5,32 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.services.state_machine_engine import get_state_machine_engine
 from app.services.data_collector import get_data_collector
+from app.storage import get_storage
+
+
+def check_instrument_conflicts(setup_id: int) -> None:
+    """Check for instrument conflicts and raise HTTPException if found."""
+    collector = get_data_collector()
+    conflict = collector.check_instrument_conflicts(setup_id)
+    
+    if conflict:
+        if "error" in conflict:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=conflict["error"]
+            )
+        elif "conflicts" in conflict:
+            # Build detailed error message
+            conflict_msgs = []
+            for c in conflict["conflicts"]:
+                setup_names = ", ".join([s["setup_name"] for s in c["conflicting_setups"]])
+                conflict_msgs.append(f"{c['instrument_name']} (in use by: {setup_names})")
+            
+            detail = "Cannot start state machine: instruments already in use by other monitoring setups:\n" + "\n".join(conflict_msgs)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=detail
+            )
 
 router = APIRouter(prefix="/state-machine", tags=["state-machine"])
 
@@ -19,6 +45,9 @@ async def start_state_machine(setup_id: int) -> Dict[str, Any]:
     3. Apply the initial state's instrument settings
     4. Begin monitoring and rule evaluation
     """
+    # Check for instrument conflicts before starting
+    check_instrument_conflicts(setup_id)
+    
     engine = get_state_machine_engine()
     
     success = await engine.start_session(setup_id)

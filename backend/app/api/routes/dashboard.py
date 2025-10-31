@@ -91,7 +91,23 @@ async def start_monitoring(setup_id: int) -> Dict[str, str]:
     if not setup:
         raise HTTPException(status_code=404, detail="Monitoring setup not found")
     
+    # Check for instrument conflicts before starting
     collector = get_data_collector()
+    conflict = collector.check_instrument_conflicts(setup_id)
+    
+    if conflict:
+        if "error" in conflict:
+            raise HTTPException(status_code=400, detail=conflict["error"])
+        elif "conflicts" in conflict:
+            # Build detailed error message
+            conflict_msgs = []
+            for c in conflict["conflicts"]:
+                setup_names = ", ".join([s["setup_name"] for s in c["conflicting_setups"]])
+                conflict_msgs.append(f"{c['instrument_name']} (in use by: {setup_names})")
+            
+            detail = "Cannot start: instruments already in use by other monitoring setups:\\n" + "\\n".join(conflict_msgs)
+            raise HTTPException(status_code=409, detail=detail)
+    
     collector.start_monitoring(setup_id)
     
     return {"status": "started", "setup_id": str(setup_id)}

@@ -512,6 +512,127 @@ class DataCollector:
         status = self._last_status.get(setup_id, {})
         return {"running": running, **status}
 
+    def get_running_setup_ids(self) -> List[int]:
+        """Get list of setup IDs that are currently running."""
+        return [setup_id for setup_id, task in self._tasks.items() if not task.cancelled()]
+
+    def get_instruments_in_use(self) -> Dict[int, List[int]]:
+        """Get mapping of instrument_id -> [setup_ids] for all instruments currently in use.
+        
+        Returns a dict where keys are instrument IDs and values are lists of setup IDs using them.
+        """
+        storage = get_storage()
+        instruments_in_use: Dict[int, List[int]] = {}
+        
+        for setup_id in self.get_running_setup_ids():
+            setup = storage.get_monitoring_setup(setup_id)
+            if not setup:
+                continue
+            
+            # Check both old single-instrument and new multi-instrument format
+            instrument_ids = []
+            
+            # Old format: instrument_id
+            if "instrument_id" in setup:
+                instrument_ids.append(setup["instrument_id"])
+            
+            # New format: instruments array
+            for target in setup.get("instruments", []):
+                inst_id = target.get("instrument_id")
+                if inst_id:
+                    instrument_ids.append(inst_id)
+            
+            # Add to mapping
+            for inst_id in instrument_ids:
+                if inst_id not in instruments_in_use:
+                    instruments_in_use[inst_id] = []
+                instruments_in_use[inst_id].append(setup_id)
+        
+        # Also check state machine sessions
+        try:
+            from app.services.state_machine_engine import get_state_machine_engine
+            engine = get_state_machine_engine()
+            
+            for session_status in engine.get_all_sessions_status():
+                if not session_status.get("is_running"):
+                    continue
+                    
+                setup_id = session_status.get("setup_id")
+                if not setup_id:
+                    continue
+                    
+                setup = storage.get_monitoring_setup(setup_id)
+                if not setup:
+                    continue
+                
+                instrument_ids = []
+                if "instrument_id" in setup:
+                    instrument_ids.append(setup["instrument_id"])
+                for target in setup.get("instruments", []):
+                    inst_id = target.get("instrument_id")
+                    if inst_id:
+                        instrument_ids.append(inst_id)
+                
+                for inst_id in instrument_ids:
+                    if inst_id not in instruments_in_use:
+                        instruments_in_use[inst_id] = []
+                    if setup_id not in instruments_in_use[inst_id]:
+                        instruments_in_use[inst_id].append(setup_id)
+        except Exception:
+            pass
+        
+        return instruments_in_use
+
+    def check_instrument_conflicts(self, setup_id: int) -> Optional[Dict[str, Any]]:
+        """Check if any instruments in the given setup are already in use.
+        
+        Returns None if no conflicts, otherwise returns a dict with conflict details.
+        """
+        storage = get_storage()
+        setup = storage.get_monitoring_setup(setup_id)
+        if not setup:
+            return {"error": "Setup not found"}
+        
+        # Get instruments for this setup
+        instrument_ids = []
+        if "instrument_id" in setup:
+            instrument_ids.append(setup["instrument_id"])
+        for target in setup.get("instruments", []):
+            inst_id = target.get("instrument_id")
+            if inst_id:
+                instrument_ids.append(inst_id)
+        
+        if not instrument_ids:
+            return {"error": "Setup has no instruments configured"}
+        
+        # Check for conflicts
+        instruments_in_use = self.get_instruments_in_use()
+        conflicts = []
+        
+        for inst_id in instrument_ids:
+            if inst_id in instruments_in_use:
+                conflicting_setups = [sid for sid in instruments_in_use[inst_id] if sid != setup_id]
+                if conflicting_setups:
+                    instrument = storage.get_instrument(inst_id)
+                    inst_name = instrument.get("name") if instrument else f"ID {inst_id}"
+                    
+                    conflict_details = []
+                    for other_setup_id in conflicting_setups:
+                        other_setup = storage.get_monitoring_setup(other_setup_id)
+                        setup_name = other_setup.get("name") if other_setup else f"ID {other_setup_id}"
+                        conflict_details.append({"setup_id": other_setup_id, "setup_name": setup_name})
+                    
+                    conflicts.append({
+                        "instrument_id": inst_id,
+                        "instrument_name": inst_name,
+                        "conflicting_setups": conflict_details
+                    })
+        
+        if conflicts:
+            return {"conflicts": conflicts}
+        
+        return None
+
     def _add_state_machine_info(self, reading: Dict[str, Any], setup_id: int) -> None:
         """Add current state machine state to a reading if available."""
         try:

@@ -9,6 +9,31 @@ from app.models.state_machine import (
     validate_state_machine_on_write,
 )
 
+
+def check_instrument_conflicts(setup_id: int) -> None:
+    """Check for instrument conflicts and raise HTTPException if found."""
+    collector = get_data_collector()
+    conflict = collector.check_instrument_conflicts(setup_id)
+    
+    if conflict:
+        if "error" in conflict:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=conflict["error"]
+            )
+        elif "conflicts" in conflict:
+            # Build detailed error message
+            conflict_msgs = []
+            for c in conflict["conflicts"]:
+                setup_names = ", ".join([s["setup_name"] for s in c["conflicting_setups"]])
+                conflict_msgs.append(f"{c['instrument_name']} (in use by: {setup_names})")
+            
+            detail = "Cannot start: instruments already in use by other monitoring setups:\n" + "\n".join(conflict_msgs)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=detail
+            )
+
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 
