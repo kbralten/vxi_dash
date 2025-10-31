@@ -1,0 +1,38 @@
+name: Build production Docker image
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build Dockerfile.prod
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build production image
+        env:
+          DOCKER_BUILDKIT: 1
+        run: |
+          # Build the image using the production Dockerfile located at repo root
+          docker build -f Dockerfile.prod -t vxi_dash:prod .
+
+      - name: Save image to tar
+        run: |
+          docker save vxi_dash:prod -o vxi_dash_prod.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vxi_dash_prod_image
+          path: vxi_dash_prod.tar
